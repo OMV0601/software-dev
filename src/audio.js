@@ -29,7 +29,9 @@ export class AudioEngine {
         l.upX.value = 0; l.upY.value = 1; l.upZ.value = 0;
       }
     }
-    if (this.ctx.state === "suspended") this.ctx.resume();
+    // An OfflineAudioContext (used to render audio to a file) must not be resumed.
+    const offline = typeof OfflineAudioContext !== "undefined" && this.ctx instanceof OfflineAudioContext;
+    if (this.ctx.state === "suspended" && !offline) this.ctx.resume();
     return this.ctx;
   }
 
