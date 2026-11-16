@@ -7,6 +7,7 @@ import { AudioEngine } from "./audio.js";
 import { buildScore } from "./sonify.js";
 import { analyze } from "./analyze.js";
 import { Speech } from "./speech.js";
+import { Explorer } from "./explore.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -102,6 +103,7 @@ function stop({ silent = false } = {}) {
 // ------------------------------------------------------------------ examples
 function loadExample(id, { announce = true } = {}) {
   const ex = getExample(id);
+  if (explorer.active) explorer.setActive(false);
   stop({ silent: true });
   editor.setCode(ex.code);
   els.select.value = ex.id;
@@ -121,6 +123,25 @@ const HELP =
 // ------------------------------------------------------------------ editor + keys
 const editor = createEditor($("editor"), { doc: EXAMPLES[0].code });
 
+const explorer = new Explorer({
+  element: $("explorer"),
+  breadcrumb: $("breadcrumb"),
+  editor,
+  python,
+  audio,
+  speech,
+  onModeChange(on) {
+    els.mode.textContent = on ? "Exploring" : "Editing";
+    els.mode.className = "pill" + (on ? " pill-explore" : "");
+  },
+});
+
+async function toggleExplore() {
+  if (!pythonReady) return speech.say("Python is still loading. Try again in a moment.");
+  stop({ silent: true });
+  await explorer.toggle();
+}
+
 // Shortcuts that work anywhere on the page. Registered in the capture phase
 // and stopped there, so the editor never also handles them.
 document.addEventListener("keydown", (e) => {
@@ -128,6 +149,7 @@ document.addEventListener("keydown", (e) => {
   if (mod && e.key === "Enter") { e.preventDefault(); run(); }
   else if (mod && e.key === ".") { e.preventDefault(); stop(); }
   else if (mod && (e.key === "r" || e.key === "R")) { e.preventDefault(); speech.repeat(); }
+  else if (mod && (e.key === "e" || e.key === "E")) { e.preventDefault(); toggleExplore(); }
   else if (e.key === "F1") { e.preventDefault(); speech.say(HELP); }
   else if (e.altKey && /^Digit[1-9]$/.test(e.code)) {
     const ex = EXAMPLES[Number(e.code.slice(5)) - 1];
@@ -144,7 +166,8 @@ for (const ex of EXAMPLES) els.select.add(new Option(ex.title, ex.id));
 els.select.addEventListener("change", () => loadExample(els.select.value));
 $("run-btn").addEventListener("click", run);
 $("stop-btn").addEventListener("click", () => stop());
+$("explore-btn").addEventListener("click", toggleExplore);
 els.rate.addEventListener("input", () => (speech.rate = Number(els.rate.value)));
 speech.rate = Number(els.rate.value);
 
-Object.assign(app, { run, stop, loadExample, editor, speech, audio, python });
+Object.assign(app, { run, stop, loadExample, toggleExplore, editor, speech, audio, python, explorer });

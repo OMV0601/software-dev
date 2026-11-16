@@ -109,7 +109,56 @@ def _block(kind, label, line, end_line, depth, children):
 
 
 def _statements(stmts, depth):
-    return [_node(s, depth) for s in stmts]
+    out = []
+    for s in stmts:
+        if isinstance(s, ast.If):
+            out.extend(_if_chain(s, depth))
+        else:
+            out.append(_node(s, depth))
+    return out
+
+
+def _if_chain(node, depth):
+    """if / elif / elif / else as siblings at the same level, like they look.
+
+    Python stores `elif` as an If nested inside the else branch; a listener
+    should hear them side by side instead.
+    """
+    blocks = [_branch_block(node, "if", depth)]
+    while node.orelse:
+        first = node.orelse[0]
+        # `elif` starts in the same column as its `if`; `else:` + a nested
+        # `if` is indented further, and stays nested.
+        if (len(node.orelse) == 1 and isinstance(first, ast.If)
+                and first.col_offset == node.col_offset):
+            blocks.append(_branch_block(first, "elif", depth))
+            node = first
+            continue
+        else_line = _find_keyword_line("else", blocks[-1]["endLine"] + 1, first.lineno)
+        blocks.append(_block("else", "else", else_line,
+                             node.orelse[-1].end_lineno or first.lineno, depth,
+                             _statements(node.orelse, depth + 1)))
+        break
+    return blocks
+
+
+def _branch_block(node, kind, depth):
+    """One if/elif branch. Ends at its own body, not at the end of the chain."""
+    label = ("if " if kind == "if" else "elif ") + _unparse(node.test)
+    return _block(kind, label, node.lineno, node.body[-1].end_lineno or node.lineno,
+                  depth, _statements(node.body, depth + 1))
+
+
+# Source lines of the program being parsed (used to find `else:` lines,
+# which Python's ast does not record).
+_SOURCE_LINES = []
+
+
+def _find_keyword_line(keyword, start, stop):
+    for n in range(start, stop + 1):
+        if 1 <= n <= len(_SOURCE_LINES) and _SOURCE_LINES[n - 1].strip().startswith(keyword):
+            return n
+    return max(start, 1)
 
 
 def _node(node, depth):
@@ -118,38 +167,19 @@ def _node(node, depth):
     end_line = getattr(node, "end_lineno", line) or line
     children = []
 
-    if isinstance(node, ast.If):
-        children = _statements(node.body, depth + 1)
-        if node.orelse:
-            first = node.orelse[0]
-            # "elif" is stored by Python as an If inside the else branch.
-            if len(node.orelse) == 1 and isinstance(first, ast.If):
-                elif_node = _node(first, depth + 1)
-                elif_node["kind"] = "elif"
-                elif_node["label"] = _short("elif " + _unparse(first.test))
-                children.append(elif_node)
-            else:
-                children.append(
-                    _block(
-                        "else",
-                        "else",
-                        max(first.lineno - 1, line),
-                        node.orelse[-1].end_lineno or first.lineno,
-                        depth + 1,
-                        _statements(node.orelse, depth + 2),
-                    )
-                )
-    elif isinstance(node, ast.Try):
+    if isinstance(node, ast.Try):
         children = _statements(node.body, depth + 1)
         for handler in node.handlers:
-            label = "except " + _unparse(handler.type) if handler.type else "except"
+            exc_label = "except " + _unparse(handler.type) if handler.type else "except"
             children.append(
-                _block("except", label, handler.lineno, handler.end_lineno,
+                _block("except", exc_label, handler.lineno, handler.end_lineno,
                        depth + 1, _statements(handler.body, depth + 2))
             )
         if node.finalbody:
             children.append(
-                _block("finally", "finally", node.finalbody[0].lineno - 1,
+                _block("finally", "finally",
+                       _find_keyword_line("finally", children[-1]["endLine"] + 1,
+                                          node.finalbody[0].lineno),
                        node.finalbody[-1].end_lineno, depth + 1,
                        _statements(node.finalbody, depth + 2))
             )
@@ -165,6 +195,7 @@ def parse_tree(code):
         module = ast.parse(code, filename=STUDENT_FILE)
     except SyntaxError as err:
         return {"ok": False, "error": _syntax_error(err)}
+    _SOURCE_LINES[:] = code.splitlines()
     lines = code.count("\n") + 1
     root = _block("module", "program", 1, lines, -1, _statements(module.body, 0))
     return {"ok": True, "tree": root}
