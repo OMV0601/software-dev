@@ -1,0 +1,164 @@
+:root {
+  --bg: #0b0f14;
+  --panel: #111821;
+  --panel-2: #16202b;
+  --line: #233040;
+  --text: #e8eef5;
+  --muted: #8b9bb0;
+  --accent: #22d3ee;
+  --warm: #fbbf24;
+  --ok: #34d399;
+  --err: #f87171;
+  --active-line: rgba(34, 211, 238, 0.06);
+  --run-line: rgba(34, 211, 238, 0.18);
+  --err-line: rgba(248, 113, 113, 0.2);
+  --ok-line: rgba(52, 211, 153, 0.18);
+  --mono: "JetBrains Mono", "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --code-size: 19px;
+  --radius: 14px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.skip {
+  position: absolute; left: -999px; top: 8px;
+  background: var(--accent); color: #000; padding: 8px 12px; border-radius: 8px; z-index: 10;
+}
+.skip:focus { left: 8px; }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+kbd {
+  font-family: var(--mono);
+  font-size: 0.78em;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  padding: 1px 5px;
+  margin: 0 1px;
+  color: var(--text);
+}
+
+/* ---------- header ---------- */
+.top {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 14px 22px; border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.logo { width: 38px; height: 38px; color: var(--accent); }
+h1 { margin: 0; font-size: 22px; letter-spacing: 0.2px; }
+.tagline { margin: 2px 0 0; color: var(--muted); font-size: 14px; }
+.pills { display: flex; gap: 8px; flex-wrap: wrap; }
+.pill {
+  font-size: 13px; padding: 5px 11px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text);
+}
+.pill-wait { color: var(--warm); }
+.pill-ok { color: var(--ok); }
+.pill-err { color: var(--err); }
+.pill-ghost { color: var(--muted); }
+.pill-explore { background: var(--warm); color: #000; border-color: var(--warm); font-weight: 600; }
+
+/* ---------- layout ---------- */
+.layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.9fr);
+  gap: 18px;
+  padding: 18px 22px;
+  min-height: 0;
+}
+.code-col, .listen-col { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+
+.toolbar { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.field select, .field input {
+  background: var(--panel); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 14px;
+}
+.field-range input { padding: 0; height: 36px; accent-color: var(--accent); }
+
+.btn {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  border-radius: 10px; padding: 9px 14px; font: inherit; font-size: 14px; font-weight: 600;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.btn:hover { border-color: var(--accent); }
+.btn-primary { background: var(--accent); color: #001018; border-color: var(--accent); }
+.btn-primary kbd { background: rgba(0,0,0,0.15); border-color: rgba(0,0,0,0.25); color: #001018; }
+:focus-visible { outline: 3px solid var(--warm); outline-offset: 2px; }
+
+.editor {
+  flex: 1; min-height: 340px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* ---------- explorer ---------- */
+.explorer {
+  background: var(--panel); border: 1px dashed var(--line); border-radius: var(--radius);
+  padding: 12px 14px; opacity: 0.55;
+}
+.explorer.active, .explorer:focus { opacity: 1; border-style: solid; border-color: var(--warm); outline: none; }
+.explorer-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 13px; }
+.explorer-title { font-weight: 700; color: var(--warm); }
+.explorer-keys { color: var(--muted); }
+.breadcrumb { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; font-family: var(--mono); font-size: 15px; }
+.breadcrumb li { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+.breadcrumb li.current { border-color: var(--warm); color: var(--warm); }
+.breadcrumb li + li::before { content: "›"; margin-right: 6px; color: var(--muted); }
+
+/* ---------- listening column ---------- */
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px;
+}
+.card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; gap: 8px; }
+.card h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); }
+.hint { font-size: 12px; color: var(--muted); }
+canvas { width: 100%; height: auto; display: block; }
+
+.caption-card { border-color: var(--accent); }
+.caption { margin: 0; font-size: 20px; line-height: 1.4; min-height: 2.8em; }
+.caption.ok { color: var(--ok); }
+.caption.err { color: var(--err); }
+
+.output {
+  margin: 0; font-family: var(--mono); font-size: 15px; min-height: 60px; max-height: 160px;
+  overflow: auto; white-space: pre-wrap; color: var(--text);
+}
+
+/* ---------- footer ---------- */
+.keys {
+  display: flex; flex-wrap: wrap; gap: 14px 22px; padding: 12px 22px;
+  border-top: 1px solid var(--line); color: var(--muted); font-size: 13px;
+}
+
+body.visuals-off .listen-col .card:not(.caption-card) canvas { display: none; }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; padding: 14px 16px; }
+  .top { padding: 12px 16px; }
+  .keys { padding: 12px 16px; }
+  :root { --code-size: 17px; }
+}

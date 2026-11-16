@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="EchoCode: hear the shape of your code and hear it run. A sound-first Python editor for blind and visually impaired learners." />
+    <title>EchoCode</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f14'/%3E%3Cpath d='M9 16a7 7 0 0 1 14 0M5 16a11 11 0 0 1 22 0' fill='none' stroke='%2322d3ee' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='16' cy='17' r='3' fill='%23fbbf24'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <a class="skip" href="#editor">Skip to code editor</a>
+
+    <header class="top">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M9 16a7 7 0 0 1 14 0M5 16a11 11 0 0 1 22 0" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+          <circle cx="16" cy="17" r="3" fill="var(--warm)" />
+        </svg>
+        <div>
+          <h1>EchoCode</h1>
+          <p class="tagline">Hear the shape of your code. Hear it run.</p>
+        </div>
+      </div>
+      <div class="pills">
+        <span id="mode-pill" class="pill" aria-hidden="true">Editing</span>
+        <span id="status-pill" class="pill pill-wait" role="status">Loading Python…</span>
+        <span class="pill pill-ghost" aria-hidden="true">🎧 Headphones on</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="code-col" aria-label="Code">
+        <div class="toolbar" role="toolbar" aria-label="Controls">
+          <label class="field">
+            <span>Example</span>
+            <select id="example-select" aria-label="Load an example program"></select>
+          </label>
+          <button id="run-btn" class="btn btn-primary" type="button" aria-keyshortcuts="Control+Enter">
+            ▶ Run <kbd>Ctrl</kbd><kbd>Enter</kbd>
+          </button>
+          <button id="stop-btn" class="btn" type="button" aria-keyshortcuts="Control+.">
+            ■ Stop <kbd>Ctrl</kbd><kbd>.</kbd>
+          </button>
+          <button id="explore-btn" class="btn" type="button" aria-keyshortcuts="Control+E">
+            ⌖ Explore <kbd>Ctrl</kbd><kbd>E</kbd>
+          </button>
+          <label class="field field-range">
+            <span>Voice speed</span>
+            <input id="rate" type="range" min="0.8" max="3" step="0.1" value="1.3" aria-label="Voice speed" />
+          </label>
+        </div>
+
+        <div id="editor" class="editor"></div>
+
+        <div id="explorer" class="explorer" tabindex="-1" role="application"
+             aria-roledescription="code explorer" aria-label="Code explorer. Use arrow keys to move through blocks. Enter to edit. Escape to go back.">
+          <div class="explorer-head">
+            <span class="explorer-title">Explore mode</span>
+            <span class="explorer-keys">↑ ↓ move · → inside · ← outside · Space details · Enter edit · Esc back</span>
+          </div>
+          <ol id="breadcrumb" class="breadcrumb" aria-hidden="true"></ol>
+        </div>
+      </section>
+
+      <section class="listen-col" aria-label="Listening view">
+        <div class="card">
+          <div class="card-head">
+            <h2>Where the sound is</h2>
+            <span class="hint">top-down view of your head</span>
+          </div>
+          <canvas id="space" class="space" width="440" height="300" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Pitch over time</h2>
+            <span class="hint">higher = deeper in the code</span>
+          </div>
+          <canvas id="pitch" class="pitch" width="440" height="170" aria-hidden="true"></canvas>
+        </div>
+
+        <div class="card caption-card">
+          <div class="card-head"><h2>Voice</h2></div>
+          <p id="caption" class="caption">Press <kbd>Ctrl</kbd> <kbd>Enter</kbd> to hear your code run.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head"><h2>Output</h2></div>
+          <pre id="output" class="output" aria-label="Program output" tabindex="0"></pre>
+        </div>
+      </section>
+    </main>
+
+    <footer class="keys" aria-label="Keyboard shortcuts">
+      <span><kbd>Ctrl</kbd><kbd>Enter</kbd> run</span>
+      <span><kbd>Ctrl</kbd><kbd>.</kbd> stop</span>
+      <span><kbd>Ctrl</kbd><kbd>E</kbd> explore</span>
+      <span><kbd>Ctrl</kbd><kbd>R</kbd> repeat last message</span>
+      <span><kbd>F1</kbd> help</span>
+      <span><kbd>Alt</kbd><kbd>1</kbd>–<kbd>7</kbd> examples</span>
+      <span><kbd>Alt</kbd><kbd>V</kbd> visuals</span>
+    </footer>
+
+    <div id="live" class="sr-only" aria-live="assertive" aria-atomic="true"></div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
