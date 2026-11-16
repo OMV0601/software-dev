@@ -8,6 +8,20 @@ import { basicSetup } from "codemirror";
 import { EditorView, Decoration, keymap } from "@codemirror/view";
 import { EditorState, StateEffect, StateField, Prec } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags as t } from "@lezer/highlight";
+
+// High-contrast colours for a dark background (also helps low-vision users).
+const highlight = HighlightStyle.define([
+  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "#f472b6", fontWeight: "600" },
+  { tag: [t.function(t.definition(t.variableName)), t.definition(t.className)], color: "#22d3ee", fontWeight: "600" },
+  { tag: [t.number, t.bool, t.null], color: "#fbbf24" },
+  { tag: [t.string, t.special(t.string)], color: "#86efac" },
+  { tag: t.comment, color: "#8b9bb0", fontStyle: "italic" },
+  { tag: [t.operator, t.compareOperator, t.arithmeticOperator], color: "#c4b5fd" },
+  { tag: [t.function(t.variableName), t.standard(t.variableName)], color: "#93c5fd" },
+  { tag: [t.self, t.atom], color: "#fca5a5" },
+]);
 
 const setRunningLine = StateEffect.define();
 
@@ -57,6 +71,7 @@ export function createEditor(parent, { doc = "", onChange = () => {}, extraKeys 
         Prec.highest(keymap.of(extraKeys)),
         basicSetup,
         python(),
+        syntaxHighlighting(highlight, { fallback: false }),
         theme,
         runningLineField,
         EditorView.contentAttributes.of({ "aria-label": "Python code editor" }),

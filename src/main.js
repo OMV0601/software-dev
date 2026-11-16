@@ -8,6 +8,7 @@ import { buildScore } from "./sonify.js";
 import { analyze } from "./analyze.js";
 import { Speech } from "./speech.js";
 import { Explorer } from "./explore.js";
+import { SpaceView, PitchView } from "./overlay.js";
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -37,6 +38,28 @@ function showCaption(text, tone = "info") {
 
 // ------------------------------------------------------------------ services
 const audio = new AudioEngine();
+const space = new SpaceView($("space"));
+const pitch = new PitchView($("pitch"));
+
+const ENDING_LABEL = {
+  "runaway-recursion": "never came back ↑",
+  "runaway-loop": "never stopped ⟳",
+  ok: "came back ✓",
+  error: "error ✕",
+  syntax: "syntax error ✕",
+  timeout: "too long ✕",
+  budget: "too many steps ✕",
+};
+
+function stepLabel(step) {
+  if (step.sound === "call") {
+    const values = (step.args || "").split(", ").map((a) => a.split("=")[1]).join(", ");
+    return `${step.fn}(${values})`;
+  }
+  if (step.sound === "return") return `← ${step.fn}`;
+  if (step.sound === "tick") return `loop, line ${step.loop}`;
+  return "";
+}
 const speech = new Speech({ liveRegion: $("live"), onSay: showCaption });
 
 let pythonReady = false;
@@ -77,15 +100,22 @@ async function run() {
   app.lastAnalysis = analysis;
   const score = buildScore(result);
   app.lastScore = score;
+  pitch.reset(score);
 
   const finished = await audio.play(score, {
     onStep(step) {
       editor.highlightLine(step.line);
+      pitch.add(step);
+      space.ping({ pos: step.pos, kind: step.sound, label: stepLabel(step) });
     },
   });
   if (!finished || runId !== app.runId) return;
 
-  editor.highlightLine(analysis.line, analysis.tone === "ok" ? "ok" : "error");
+  const ok = analysis.tone === "ok";
+  const hasCalls = score.steps.some((s) => s.sound === "call");
+  pitch.end(analysis.tone, ok ? (hasCalls ? "came back down ✓" : "done ✓") : ENDING_LABEL[analysis.kind] || "problem ✕");
+  space.ping({ pos: { x: 0, y: 0.3, z: -1 }, kind: ok ? "done" : "error", label: ok ? "✓ chime" : "✕ buzz" });
+  editor.highlightLine(analysis.line, ok ? "ok" : "error");
   speech.say(analysis.text, { tone: analysis.tone });
   app.running = false;
   app.lastFinishedAt = Date.now();
@@ -109,6 +139,7 @@ function loadExample(id, { announce = true } = {}) {
   els.select.value = ex.id;
   els.output.textContent = "";
   editor.highlightLine(null);
+  pitch.reset();
   if (announce) speech.say(`Loaded example: ${ex.title}.`);
 }
 
@@ -130,6 +161,7 @@ const explorer = new Explorer({
   python,
   audio,
   speech,
+  onSound: (info) => space.ping(info),
   onModeChange(on) {
     els.mode.textContent = on ? "Exploring" : "Editing";
     els.mode.className = "pill" + (on ? " pill-explore" : "");

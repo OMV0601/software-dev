@@ -23,6 +23,10 @@
         </div>
       </div>
       <div class="pills">
+        <label class="speed">
+          <span>Voice speed</span>
+          <input id="rate" type="range" min="0.8" max="3" step="0.1" value="1.3" aria-label="Voice speed" />
+        </label>
         <span id="mode-pill" class="pill" aria-hidden="true">Editing</span>
         <span id="status-pill" class="pill pill-wait" role="status">Loading Python…</span>
         <span class="pill pill-ghost" aria-hidden="true">🎧 Headphones on</span>
@@ -45,10 +49,6 @@
           <button id="explore-btn" class="btn" type="button" aria-keyshortcuts="Control+E">
             ⌖ Explore <kbd>Ctrl</kbd><kbd>E</kbd>
           </button>
-          <label class="field field-range">
-            <span>Voice speed</span>
-            <input id="rate" type="range" min="0.8" max="3" step="0.1" value="1.3" aria-label="Voice speed" />
-          </label>
         </div>
 
         <div id="editor" class="editor"></div>
@@ -69,7 +69,7 @@
             <h2>Where the sound is</h2>
             <span class="hint">top-down view of your head</span>
           </div>
-          <canvas id="space" class="space" width="440" height="300" aria-hidden="true"></canvas>
+          <canvas id="space" class="space" width="440" height="200" aria-hidden="true"></canvas>
         </div>
 
         <div class="card">
@@ -77,7 +77,7 @@
             <h2>Pitch over time</h2>
             <span class="hint">higher = deeper in the code</span>
           </div>
-          <canvas id="pitch" class="pitch" width="440" height="170" aria-hidden="true"></canvas>
+          <canvas id="pitch" class="pitch" width="440" height="125" aria-hidden="true"></canvas>
         </div>
 
         <div class="card caption-card">

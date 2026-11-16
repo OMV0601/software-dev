@@ -131,7 +131,7 @@ export class Explorer {
     else if (BRANCH_KINDS.has(node.kind)) a.branch(freq, t, pos);
     else if (node.kind === "return") a.note(freq, t, pos, { peak: 0.35, decay: 0.3 });
     else a.bell(freq, t, pos);
-    this.onSound({ kind: node.kind, pos, level });
+    this.onSound({ kind: node.kind, pos, level, label: node.label.length > 22 ? node.label.slice(0, 21) + "…" : node.label });
   }
 
   renderBreadcrumb() {
