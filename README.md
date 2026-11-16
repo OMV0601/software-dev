@@ -1,262 +1,226 @@
-# ECHO CODE 
-
 # 🎧 EchoCode
 
 **Hear the shape of your code. Hear it run.**
 
-EchoCode is a browser-based coding environment for blind and visually impaired students learning to program. It turns code structure into **3D spatial sound** and turns running code into **music**, so students can understand and debug programs without seeing them.
+EchoCode is a Python editor for blind and visually impaired students learning to program. It turns **running code into music** and lets you **walk through code by sound**, so you can understand and debug a program without seeing it.
+
+Everything runs in the browser. Python itself runs locally (no server, no account, works offline once loaded), and **no AI decides whether your code is right**. Every bug explanation comes from plain, deterministic, tested code.
 
 ---
 
-## 📌 The Problem
+## The problem
 
-Learning to code is heavily visual: indentation, nested blocks, syntax colours, flowcharts and debuggers.
-
-Blind and visually impaired students usually use **screen readers**, which read code one character or one line at a time:
+Learning to code is heavily visual: indentation, nested blocks, colours, debuggers. Screen readers read code one character or one line at a time:
 
 > "d, e, f, space, c, o, u, n, t, d, o, w, n, left paren, n, right paren, colon…"
 
-This makes it very hard to:
-- understand **structure** (what is inside what)
-- follow **what happens when the code runs**
-- find bugs like **infinite loops** or **recursion that never stops**
+That makes it hard to tell **what is inside what**, to follow **what happens when the code runs**, and to find bugs like **loops that never end** or **recursion that never stops**.
 
----
+## What EchoCode does
 
-## 💡 Our Solution
+### 1. 🎵 Hear it run
+Press **Ctrl + Enter**. Every step of the program becomes a sound.
 
-EchoCode gives students two new ways to understand code:
-
-### 1. 🎵 Hear It Run (execution sonification)
-Press **Run** and every step of the program plays a sound.
-
-| Code behaviour | What you hear |
+| What the code does | What you hear |
 |---|---|
-| Function calls itself (recursion) | Notes go **up** with each call and **down** with each return |
-| Loop goes round once | A **tick** (like a drum beat) |
-| Program finishes correctly | ✨ A **chime** |
-| Something goes wrong | 🔴 A low **buzz** + a spoken explanation |
+| A function calls itself | Each call is a note one step **higher** |
+| A call returns | A note one step **lower** |
+| A loop goes round | A **tick** |
+| The program finishes | ✨ A **chime**, then a spoken summary |
+| Something goes wrong | A low **buzz**, then a spoken explanation |
 
-### 2. 🧭 Walk Through Code by Sound (spatial navigation)
-Instead of reading character by character, students move through **blocks** of code with arrow keys.
+Deeper code is also placed **further to the right** in your headphones (3D audio).
+
+### 2. 🧭 Walk through code by sound
+Press **Ctrl + E** for Explore mode. Move through **blocks**, not characters.
 
 | Key | Action |
 |---|---|
 | ↓ / ↑ | Next / previous statement |
-| → | Go **inside** a block (function, loop, if) |
-| ← | Go back **out** of a block |
-| Ctrl + Enter | Run the code |
-| Esc | Stop running / stop speech |
+| → / ← | Go inside a block / back out |
+| Home / End | First / last statement at this level |
+| Space | Read the whole line |
+| Enter or Esc | Back to editing, on this line |
 
-Each block type has its own sound, and **deeper blocks sound further to the right** in your headphones. A voice gives a short summary like *"for loop, line 3, 2 statements inside."*
+Each block type has its own sound: function = chord, loop = drum, if/elif/else = two-note "question", other statements = bell, hitting an edge = thud.
+
+### 3. 🗣️ Plain-English explanations
+After each run, EchoCode says what happened, for example:
+
+- *"Recursion on line 3 went 395 calls deep and never came back. `n` went 3, 2, 1, 0, -1, and kept going. `countdown` has no `if`, so nothing tells it to stop."*
+- *"The while loop on line 2 ran 1,000 times and never stopped. `count` was 1 every single time. Is `count` ever changing?"*
+- *"Name error on line 3: `totl` is not defined. Did you mean `total`?"*
+- *"Done. `countdown` was called 4 times, and every call came back."*
+
+Code in messages is read the way a teacher would say it: `count = count + 1` → "count becomes count plus 1".
+
+### 4. 👀 Visuals for sighted viewers
+Teachers, classmates and judges can **see** what the student hears: a top-down view of the listener's head showing where each sound sits, a live **pitch graph** (working recursion draws a mountain; runaway recursion climbs and never comes down), the running line highlighted, and captions of everything spoken.
 
 ---
 
-## 🧪 Examples
+## Examples
 
-### Example 1: Recursion that never stops
-
+### Recursion that never stops
 ```python
 def countdown(n):
     print(n)
-    countdown(n - 1)   # bug: nothing tells it to stop
+    countdown(n - 1)   # nothing tells it to stop
 
 countdown(3)
 ```
+🎵 *do… re… mi… so… higher… higher… higher…* **BZZZT**
 
-**What you hear:**
-> 🎵 do… re… mi… so… la… higher… higher… higher… **BZZZT**
+Add `if n == 0: return` and run it again:
+🎵 *do… re… mi… **so**… mi… re… do…* ✨ **chime**
 
-**Voice:** *"Recursion on line 3 went 1000 calls deep and never came back. No stop condition?"*
+> Think of it like stairs: each call is a step **up**, each return a step **down**. A bug sounds like stairs that never end.
 
-**Fixed:**
-```python
-def countdown(n):
-    if n == 0:
-        return
-    print(n)
-    countdown(n - 1)
-
-countdown(3)
-```
-
-**What you hear:**
-> 🎵 do… re… mi… **so**… mi… re… do… ✨ chime
-
-**Voice:** *"Done. 4 calls, all returned."*
-
-> Think of it like stairs: each call is a step **up**, each return is a step **down**. A bug sounds like stairs that never end.
-
----
-
-### Example 2: A loop that never ends
-
+### A loop that never ends
 ```python
 count = 1
 while count <= 3:
-    print(count)
-    # bug: forgot count = count + 1
+    print(count)       # forgot: count = count + 1
 ```
+*tick tick tick tick tick…* **BZZZT**, then *"`count` was 1 every single time. Is `count` ever changing?"*
 
-**What you hear:**
-> tick tick tick tick tick tick tick… **BZZZT**
+With the fix: *tick… tick… tick…* ✨ **chime**, then *"Done. The loop on line 2 ran 3 times."*
 
-**Voice:** *"The loop on line 2 ran 1000 times and never stopped. Is `count` ever changing?"*
-
-**Fixed:**
-```python
-count = 1
-while count <= 3:
-    print(count)
-    count = count + 1
-```
-
-**What you hear:**
-> tick… tick… tick… ✨ chime
-
-**Voice:** *"Done. The loop ran 3 times."*
+Seven examples are built in (**Alt + 1** to **Alt + 7**): each bug comes with its fixed twin.
 
 ---
 
-### Example 3: Exploring code with arrow keys
+## All keyboard shortcuts
 
-Using the buggy `countdown` code from Example 1:
-
-| Key pressed | Sound | Voice | Position in headphones |
-|---|---|---|---|
-| ↓ | 🎹 chord | "function countdown" | centre |
-| → | 🔔 bell | "print n" | slightly right |
-| ↓ | 🔔 bell | "call countdown, n minus 1" | slightly right |
-| ↓ | — | "end of function" | — |
-
-There is no `if` sound anywhere, so the student can tell there is **no stop condition**.
-
----
-
-## 🛠️ Tech Stack
-
-| Part | Technology | Why |
-|---|---|---|
-| Code editor | **CodeMirror 6** | Accessible, keyboard-friendly editor |
-| Running Python | **Pyodide** (in a **Web Worker**) | Real Python in the browser, no server needed |
-| Reading code structure | Python **`ast`** module | Turns code into a tree of blocks |
-| Tracking execution | Python **`sys.settrace`** | Reports every line and function call as it runs |
-| 3D sound | **Web Audio API** (`PannerNode`, HRTF) | Places sounds around the listener's head |
-| Voice | **Web Speech API** (`speechSynthesis`) | Speaks summaries and errors |
-| Screen reader support | **ARIA live regions** | Works alongside existing screen readers |
-| Build tool | **Vite** | Fast local development |
-
-**No AI is used to decide if code is right or wrong.** Bug detection is done by plain code, so it is fast, predictable and cannot make things up.
-
----
-
-## 🏗️ Architecture
-
-```
-┌──────────────── Browser (main thread) ────────────────┐
-│  Editor (CodeMirror)    ← student types code          │
-│  Keyboard controller    ← every action is a key       │
-│  Tree navigator         ← arrow keys walk the code    │
-│  Audio engine           ← 3D notes (Web Audio)        │
-│  Speech                 ← voice (Web Speech API)      │
-│  Visual overlay         ← shows sounds for sighted    │
-│                           viewers (demo / teachers)   │
-└───────────────┬───────────────────────────────────────┘
-                │  messages (JSON)
-┌───────────────▼──────── Web Worker ───────────────────┐
-│  Pyodide (Python in the browser)                      │
-│   • parse_tree(code) → code structure as JSON         │
-│   • trace_run(code)  → list of execution events       │
-└───────────────────────────────────────────────────────┘
-```
-
-**Why a Web Worker?** If the student's code has an infinite loop, it would freeze the page. Running it in a worker keeps the page responsive, and we can stop it at any time.
-
-### How it works, step by step
-1. The student writes Python in the editor.
-2. **`parse_tree`** uses Python's `ast` module to turn the code into a tree:
-   ```json
-   { "type": "FunctionDef", "label": "countdown", "line": 1, "depth": 0,
-     "children": [
-       { "type": "Expr", "label": "print(n)", "line": 2, "depth": 1 },
-       { "type": "Expr", "label": "countdown(n - 1)", "line": 3, "depth": 1 }
-     ] }
-   ```
-3. On **Run**, **`trace_run`** uses `sys.settrace` to record every step:
-   ```json
-   [ {"e": "call", "line": 1, "depth": 1},
-     {"e": "line", "line": 2, "depth": 1},
-     {"e": "call", "line": 1, "depth": 2} ]
-   ```
-   - A safety limit (around 3000 events) catches infinite loops.
-   - Python's own `RecursionError` catches infinite recursion.
-4. The **analyzer** reads the events and names the problem in plain English.
-5. The **audio engine** turns each event into a note, tick or chime, timed on the audio clock so the rhythm stays even.
-6. The **speech** module reads out the result.
-
-### Sound mapping
-
-| Code thing | Sound |
+| Keys | Action |
 |---|---|
-| Call depth | **Pitch** (deeper = higher, on a pentatonic scale so it always sounds musical) |
-| Loop iteration | Short drum tick |
-| Function call / return | Rising / falling blip |
-| Nesting depth | **Position**: further right in the headphones |
-| Error | Low buzz |
-| Success | Chime |
+| Ctrl + Enter | Run and hear the code |
+| Ctrl + . | Stop |
+| Ctrl + E | Explore mode on / off |
+| Ctrl + R | Repeat the last message |
+| Alt + O | Read the program's output aloud |
+| Alt + 1 … 7 | Load an example |
+| Alt + V | Hide / show the visuals |
+| F1 | Spoken help |
+
+(On a Mac, Cmd works in place of Ctrl.) Everything spoken is also sent to an ARIA live region, so it works alongside screen readers such as NVDA, JAWS and VoiceOver. Voice speed is adjustable.
 
 ---
 
-## 📁 Project Structure
+## How it works
 
 ```
-echocode/
-├─ index.html
-├─ src/
-│  ├─ main.js          # wiring + keyboard shortcuts
-│  ├─ editor.js        # CodeMirror setup
-│  ├─ worker.js        # loads Pyodide, runs helpers.py
-│  ├─ helpers.py       # parse_tree + trace_run
-│  ├─ analyze.js       # turns events into a plain-English diagnosis
-│  ├─ audio.js         # Web Audio engine (3D sound)
-│  ├─ navigator.js     # arrow-key tree walking
-│  ├─ speech.js        # voice + ARIA live region
-│  └─ overlay.js       # visual view of the sound for sighted viewers
-└─ examples/           # sample programs (buggy + fixed)
+┌─────────────── Browser (main thread) ───────────────┐
+│ Editor (CodeMirror 6)       you type code           │
+│ Explorer + tree cursor      arrow keys walk blocks  │
+│ Analyzer                    plain-English diagnosis │
+│ Audio engine (Web Audio)    3D notes, ticks, chime  │
+│ Speech (Web Speech API)     voice + ARIA live region│
+│ Overlay (canvas)            visuals for sighted     │
+└──────────────┬──────────────────────────────────────┘
+               │ JSON messages
+┌──────────────▼─────────── Web Worker ───────────────┐
+│ Pyodide: real CPython compiled to WebAssembly       │
+│   parse_tree(code) → blocks, using Python's `ast`   │
+│   trace_run(code)  → every step, using sys.settrace │
+└─────────────────────────────────────────────────────┘
 ```
 
----
+1. **`parse_tree`** uses Python's own `ast` module to turn code into a tree of blocks (if/elif/else are kept side by side, as they look).
+2. **`trace_run`** runs the code with `sys.settrace`, recording each call, return, loop round and print, with the call depth and argument values.
+   - A **step budget** stops infinite loops (it can't be swallowed by `except Exception`).
+   - A **recursion limit** catches runaway recursion.
+   - The worker runs on its own thread with a **hard timeout**, so the page never freezes.
+3. **`analyze.js`** reads the trace and explains it: which line, which values, which variable never changed, whether a stop condition exists.
+4. **`sonify.js`** turns the trace into a score: call depth → pitch on a pentatonic scale (so it always sounds musical), loop rounds → ticks; long runs speed up so runaway code sounds like it's spiralling away.
+5. **`audio.js`** synthesises every sound with oscillators (no audio files) and places it in 3D with an HRTF `PannerNode`, scheduled on the audio clock so the rhythm is exact.
 
-## 🚀 Getting Started
+## Tech stack
+
+| Part | Technology |
+|---|---|
+| Editor | CodeMirror 6 (keyboard-first, screen-reader friendly) |
+| Python | Pyodide 0.27 (CPython 3.12 in WebAssembly), in a Web Worker, served locally |
+| Structure | Python `ast` |
+| Execution tracing | Python `sys.settrace` |
+| 3D sound | Web Audio API (`PannerNode`, HRTF) |
+| Voice | Web Speech API + ARIA live region |
+| Build / tests | Vite, Vitest, Python `unittest`, Playwright |
+
+## Project structure
+
+```
+index.html
+src/
+  main.js        wiring, shortcuts, run/stop
+  editor.js      CodeMirror setup + running-line highlight
+  python.js      worker client with timeout + restart
+  worker.js      loads Pyodide, calls helpers.py
+  helpers.py     parse_tree + trace_run (the Python side)
+  analyze.js     trace → plain-English explanation
+  sonify.js      trace → score (pitch, ticks, timing)
+  audio.js       Web Audio engine (3D, all sounds synthesised)
+  navigator.js   tree cursor + spoken block descriptions
+  explore.js     Explore mode (keys, sounds, breadcrumb)
+  speech.js      voice + live region
+  speakable.js   reads code aloud naturally
+  overlay.js     head view + pitch graph
+  examples.js    built-in example programs
+tests/           unit tests (JS + Python) and an end-to-end browser test
+scripts/         copies the Pyodide runtime into public/
+```
+
+## Run it locally
+
+Requires Node.js 18+ (and Python 3 for the Python tests).
 
 ```bash
-git clone <your-repo-url>
-cd echocode
 npm install
+```
+
+```bash
 npm run dev
 ```
 
-Then open the local URL in **Chrome** and **put on headphones** 🎧 (needed for the 3D sound).
+Open the printed URL in **Chrome or Edge** and **put on headphones** 🎧. The first load downloads Python (about 10 MB) from your own server; after that it's cached.
+
+## Tests
+
+```bash
+npm test
+```
+Runs the JavaScript unit tests (Vitest) and the Python unit tests. The JS tests run the **real** Python helpers to get genuine traces.
+
+```bash
+npm run test:e2e
+```
+Builds the app and drives it in Chromium with real key presses (needs Playwright: `npm i -D playwright && npx playwright install chromium`).
+
+## Deploy
+
+```bash
+npm run build
+```
+Upload the `dist/` folder to any static host (GitHub Pages, Netlify, Vercel). No server code is needed.
 
 ---
 
-## 🗺️ Roadmap / Next Steps
+## Limitations (honest list)
 
+- **Python only**, and `input()` is not supported yet.
+- 3D sound needs **headphones**; on speakers you still hear pitch and rhythm, but not position.
+- Long runs are summarised: only the first 90 sounds play, then the ending.
+- Speech uses the voices installed on your computer, so it sounds different on each system.
+- This is a prototype. It has not yet been tested at scale with blind and low-vision students.
+
+## Next steps
+
+- [ ] Testing sessions with blind and low-vision students and teachers of the visually impaired
+- [ ] Sounds for data structures (lists, dictionaries)
+- [ ] Step-by-step playback (pause, step forward, hear variable values)
 - [ ] Haptic feedback through game controllers (Gamepad API vibration)
-- [ ] Support for more languages (JavaScript, Java)
-- [ ] Sounds for data structures (lists, dictionaries, trees)
-- [ ] Teacher mode: share examples and see where students get stuck
-- [ ] User testing with more blind and low-vision students
-
----
-
-## ⚠️ Current Limitations
-
-- Supports **Python only** for now.
-- Best experienced with **headphones**; 3D sound does not work well on speakers.
-- Built and tested as a prototype; it has not yet been tested at scale with blind and low-vision users.
-
----
+- [ ] More languages (JavaScript, Java)
+- [ ] Teacher mode: share exercises and see where students get stuck
 
 ## 👥 Team
 
