@@ -1,6 +1,10 @@
 import { createEditor } from "./editor.js";
 import { PythonRunner } from "./python.js";
 import { EXAMPLES, getExample } from "./examples.js";
+import { AudioEngine } from "./audio.js";
+import { buildScore } from "./sonify.js";
+
+const audio = new AudioEngine();
 
 const $ = (id) => document.getElementById(id);
 const statusPill = $("status-pill");
@@ -15,11 +19,23 @@ const python = new PythonRunner({
 });
 
 async function run() {
+  audio.ensure(); // must happen inside the key press / click
+  audio.stop();
   caption.textContent = "Running…";
   const result = await python.run(editor.getCode());
   output.textContent = result.output || "";
-  caption.textContent = `Finished with status: ${result.status}`;
   window.__lastResult = result;
+  const score = buildScore(result);
+  window.__lastScore = score;
+  let steps = 0;
+  await audio.play(score, {
+    onStep(step) {
+      steps++;
+      editor.highlightLine(step.line);
+    },
+  });
+  editor.highlightLine(null);
+  caption.textContent = `Finished with status: ${result.status} (${steps} sounds)`;
 }
 
 const editor = createEditor($("editor"), {
