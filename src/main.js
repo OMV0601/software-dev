@@ -60,6 +60,7 @@ function stepLabel(step) {
   if (step.sound === "tick") return `loop, line ${step.loop}`;
   return "";
 }
+
 const speech = new Speech({ liveRegion: $("live"), onSay: showCaption });
 
 let pythonReady = false;
@@ -68,6 +69,9 @@ const python = new PythonRunner({
     pythonReady = state === "ready";
     els.status.className = "pill " + (pythonReady ? "pill-ok" : state === "failed" ? "pill-err" : "pill-wait");
     els.status.textContent = pythonReady ? "Python ready" : state === "failed" ? "Python failed to load" : "Loading Python…";
+    if (state === "failed") {
+      speech.say("Python failed to load. Please reload the page.", { tone: "err" });
+    }
   },
 });
 
@@ -143,13 +147,23 @@ function loadExample(id, { announce = true } = {}) {
   if (announce) speech.say(`Loaded example: ${ex.title}.`);
 }
 
+// ------------------------------------------------------------------ output
+// A blind user can't glance at the output box, so Alt+O reads it out.
+function readOutput() {
+  const lines = (els.output.textContent || "").split("\n").filter((l) => l !== "");
+  if (!lines.length) return speech.say("No output yet.");
+  const shown = lines.slice(0, 12);
+  const more = lines.length > shown.length ? ` And ${lines.length - shown.length} more lines.` : "";
+  speech.say(`Output, ${lines.length} ${lines.length === 1 ? "line" : "lines"}: ${shown.join(", ")}.${more}`);
+}
+
 // ------------------------------------------------------------------ help
 const HELP =
   "Keys. Control Enter runs your code and plays it as sound. " +
   "Notes going up mean a function calling deeper; going down means returning. " +
   "Ticks are loop rounds. A chime means it finished; a buzz means a problem. " +
   "Control period stops. Control E explores your code by sound. " +
-  "Control R repeats the last message. Alt 1 to 7 loads an example. Alt V hides the visuals.";
+  "Control R repeats the last message. Alt O reads the output. Alt 1 to 7 loads an example. Alt V hides the visuals.";
 
 // ------------------------------------------------------------------ editor + keys
 const editor = createEditor($("editor"), { doc: EXAMPLES[0].code });
@@ -186,6 +200,9 @@ document.addEventListener("keydown", (e) => {
   else if (e.altKey && /^Digit[1-9]$/.test(e.code)) {
     const ex = EXAMPLES[Number(e.code.slice(5)) - 1];
     if (ex) { e.preventDefault(); loadExample(ex.id); }
+  } else if (e.altKey && e.code === "KeyO") {
+    e.preventDefault();
+    readOutput();
   } else if (e.altKey && e.code === "KeyV") {
     e.preventDefault();
     document.body.classList.toggle("visuals-off");
@@ -202,4 +219,4 @@ $("explore-btn").addEventListener("click", toggleExplore);
 els.rate.addEventListener("input", () => (speech.rate = Number(els.rate.value)));
 speech.rate = Number(els.rate.value);
 
-Object.assign(app, { run, stop, loadExample, toggleExplore, editor, speech, audio, python, explorer });
+Object.assign(app, { run, stop, loadExample, toggleExplore, readOutput, editor, speech, audio, python, explorer });

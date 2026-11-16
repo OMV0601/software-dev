@@ -10,7 +10,7 @@
     "test": "vitest run && python3 -m unittest discover -s tests -p \"test_*.py\"",
     "test:js": "vitest run",
     "test:py": "python3 -m unittest discover -s tests -p \"test_*.py\"",
-    "test:e2e": "node tests/e2e.mjs"
+    "test:e2e": "vite build && node tests/e2e.mjs"
   },
   "repository": {
     "type": "git",
