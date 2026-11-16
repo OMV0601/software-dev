@@ -1,189 +1,240 @@
-// The analyzer reads what happened during a run and explains it in plain
-// English. It is ordinary code (no AI), so the same program always gets the
-// same, checkable explanation.
+// Works out what happened when the code ran and explains it in plain English.
+// It's just normal if-statements and counting, no AI, so the same code
+// always gets the same explanation.
 //
-// Output: { kind, tone: "ok" | "err", line, text }
-//   text can contain `code` in backticks; the caption shows it as code and
-//   the voice reads it with speakCode().
+// Gives back: { kind, tone, line, text }
+//   tone is "ok" or "err"
+//   text can have `code` in backticks (the voice reads that part specially)
 
 import { plural } from "./speakable.js";
 
-const fmt = (n) => n.toLocaleString("en-US");
-
-function countBy(items, key) {
-  const m = new Map();
-  for (const it of items) m.set(key(it), (m.get(key(it)) || 0) + 1);
-  return m;
+// 1000 -> "1,000"
+function withCommas(n) {
+  return n.toLocaleString("en-US");
 }
 
-function mostCommon(map) {
+// counts how many times each thing appears, e.g. {countdown: 4}
+function countEach(list) {
+  const counts = {};
+  for (const item of list) {
+    if (counts[item] === undefined) counts[item] = 0;
+    counts[item]++;
+  }
+  return counts;
+}
+
+// the key with the biggest count
+function mostCommon(counts) {
   let best = null;
-  let bestN = -1;
-  for (const [k, n] of map) if (n > bestN) { best = k; bestN = n; }
+  let bestCount = -1;
+  for (const key in counts) {
+    if (counts[key] > bestCount) {
+      best = key;
+      bestCount = counts[key];
+    }
+  }
   return best;
 }
 
-function argValues(events, fn, limit = 5) {
-  return events
-    .filter((e) => e.e === "call" && e.fn === fn && e.args)
-    .slice(0, limit)
-    .map((e) => e.args.split(", ").map((a) => a.split("=")[1]).join(", "));
+function callEvents(events) {
+  const calls = [];
+  for (const ev of events) if (ev.e === "call") calls.push(ev);
+  return calls;
 }
 
-function firstArgName(events, fn) {
-  const ev = events.find((e) => e.e === "call" && e.fn === fn && e.args);
-  return ev ? ev.args.split("=")[0] : null;
+// how many times each loop went round, e.g. {"2": 3} means the loop on line 2 ran 3 times
+function loopRounds(events) {
+  const loopLines = [];
+  for (const ev of events) if (ev.loop != null) loopLines.push(ev.loop);
+  return countEach(loopLines);
 }
 
-// ------------------------------------------------------------------ recursion
-function looksLikeRunawayRecursion(result) {
+// ---------- runaway recursion ----------
+
+function isRunawayRecursion(result) {
   if (result.error && result.error.type === "RecursionError") return true;
   if (result.status !== "budget") return false;
-  const tail = result.events.slice(-300);
-  const calls = tail.filter((e) => e.e === "call").length;
-  const rets = tail.filter((e) => e.e === "return").length;
-  return result.maxDepth >= 50 && calls > rets * 2;
+  // or: it got really deep and the last steps are mostly calls, not returns
+  const lastSteps = result.events.slice(-300);
+  let calls = 0;
+  let returns = 0;
+  for (const ev of lastSteps) {
+    if (ev.e === "call") calls++;
+    if (ev.e === "return") returns++;
+  }
+  return result.maxDepth >= 50 && calls > returns * 2;
 }
 
 function explainRecursion(result) {
-  const { events, functions = {} } = result;
-  const calls = events.filter((e) => e.e === "call");
-  const fn = mostCommon(countBy(calls, (e) => e.fn));
-  const info = functions[fn] || {};
-  const line =
-    (result.error && result.error.line) || (info.recursiveCallLines || [])[0] || (calls[0] && calls[0].line);
+  const calls = callEvents(result.events);
+  const fnNames = [];
+  for (const c of calls) fnNames.push(c.fn);
+  const fn = mostCommon(countEach(fnNames));
+  const info = (result.functions || {})[fn] || {};
 
-  const parts = [
-    `Recursion on line ${line} went ${fmt(result.maxDepth)} calls deep and never came back.`,
-  ];
+  // which line made the call that went too deep
+  let line = null;
+  if (result.error && result.error.line) line = result.error.line;
+  else if (info.recursiveCallLines && info.recursiveCallLines.length) line = info.recursiveCallLines[0];
+  else if (calls.length) line = calls[0].line;
 
-  const values = argValues(events, fn);
-  const argName = firstArgName(events, fn);
+  let text = `Recursion on line ${line} went ${withCommas(result.maxDepth)} calls deep and never came back.`;
+
+  // show the first few argument values, e.g. "n went 3, 2, 1, 0, -1"
+  const values = [];
+  let argName = null;
+  for (const c of calls) {
+    if (c.fn !== fn || !c.args) continue;
+    // c.args looks like "n=3" (only using the first argument to keep it simple)
+    const firstArg = c.args.split(", ")[0];
+    argName = firstArg.split("=")[0];
+    values.push(firstArg.split("=")[1]);
+    if (values.length === 5) break;
+  }
   if (argName && values.length >= 3) {
-    parts.push(`\`${argName}\` went ${values.join(", ")}, and kept going.`);
+    text += ` \`${argName}\` went ${values.join(", ")}, and kept going.`;
   }
 
   if (fn && info.hasIf === false) {
-    parts.push(`\`${fn}\` has no \`if\`, so nothing tells it to stop. Add a stop condition.`);
+    text += ` \`${fn}\` has no \`if\`, so nothing tells it to stop. Add a stop condition.`;
   } else if (fn && info.ifLines && info.ifLines.length) {
-    parts.push(
-      `\`${fn}\` has a stop condition on line ${info.ifLines[0]}, but it was never reached. Does each call get closer to it?`,
-    );
+    text += ` \`${fn}\` has a stop condition on line ${info.ifLines[0]}, but it was never reached. Does each call get closer to it?`;
   }
-  return { kind: "runaway-recursion", tone: "err", line, text: parts.join(" ") };
+  return { kind: "runaway-recursion", tone: "err", line: line, text: text };
 }
 
-// ---------------------------------------------------------------------- loops
-function loopIterations(events) {
-  return countBy(events.filter((e) => e.loop != null), (e) => e.loop);
-}
+// ---------- runaway loop ----------
 
-function explainRunawayLoop(result, iterations) {
-  const header = mostCommon(iterations);
-  const n = iterations.get(header);
-  const loop = (result.loops || []).find((l) => l.line === header) || { kind: "while", condVars: [] };
-  const parts = [
-    `The ${loop.kind} loop on line ${header} ran ${fmt(n)} times and never stopped.`,
-  ];
+function explainRunawayLoop(result, rounds) {
+  const loopLine = Number(mostCommon(rounds));
+  const count = rounds[loopLine];
+  let loop = { kind: "while", condVars: [], test: "" };
+  for (const l of result.loops || []) {
+    if (l.line === loopLine) loop = l;
+  }
+
+  let text = `The ${loop.kind} loop on line ${loopLine} ran ${withCommas(count)} times and never stopped.`;
 
   if (loop.kind === "while") {
-    const snaps = (result.loopSnapshots || {})[String(header)] || [];
-    if (!loop.condVars || loop.condVars.length === 0) {
-      parts.push(`\`while ${loop.test}\` only stops with \`break\`, and no \`break\` ran.`);
-    } else if (snaps.length >= 2) {
-      const stuck = loop.condVars.filter((v) => snaps.every((s) => s[v] === snaps[0][v]));
-      if (stuck.length) {
-        const v = stuck[0];
-        parts.push(`\`${v}\` was ${snaps[0][v]} every single time. Is \`${v}\` ever changing?`);
+    const snapshots = (result.loopSnapshots || {})[String(loopLine)] || [];
+    if (loop.condVars.length === 0) {
+      // like "while True:"
+      text += ` \`while ${loop.test}\` only stops with \`break\`, and no \`break\` ran.`;
+    } else if (snapshots.length >= 2) {
+      // look for a variable in the condition that never changed
+      let stuckVar = null;
+      for (const v of loop.condVars) {
+        let alwaysSame = true;
+        for (const snap of snapshots) {
+          if (snap[v] !== snapshots[0][v]) alwaysSame = false;
+        }
+        if (alwaysSame) {
+          stuckVar = v;
+          break;
+        }
+      }
+      if (stuckVar) {
+        text += ` \`${stuckVar}\` was ${snapshots[0][stuckVar]} every single time. Is \`${stuckVar}\` ever changing?`;
       } else {
         const v = loop.condVars[0];
-        const seen = snaps.slice(0, 4).map((s) => s[v]).join(", ");
-        parts.push(`\`${v}\` keeps changing, ${seen}, and so on, but \`${loop.test}\` never becomes false.`);
+        const firstFew = [];
+        for (const snap of snapshots.slice(0, 4)) firstFew.push(snap[v]);
+        text += ` \`${v}\` keeps changing, ${firstFew.join(", ")}, and so on, but \`${loop.test}\` never becomes false.`;
       }
     }
   } else {
-    parts.push(`It is looping over something very large: \`${loop.test}\`.`);
+    text += ` It is looping over something very large: \`${loop.test}\`.`;
   }
-  return { kind: "runaway-loop", tone: "err", line: header, text: parts.join(" ") };
+  return { kind: "runaway-loop", tone: "err", line: loopLine, text: text };
 }
 
-// --------------------------------------------------------------------- errors
-const FRIENDLY = {
-  ZeroDivisionError: () => "You divided by zero.",
-  IndexError: () => "You asked for a position that is not in the list.",
-  KeyError: (e) => `The key ${e.message} is not in the dictionary.`,
-  TypeError: (e) => `Two things that don't fit together: ${e.message}.`,
-};
+// ---------- errors ----------
 
 function explainError(result) {
-  const e = result.error;
-  const where = e.line ? ` on line ${e.line}` : "";
-  if (e.type === "NameError" && e.name) {
-    const hint = e.suggestion ? ` Did you mean \`${e.suggestion}\`?` : "";
-    return {
-      kind: "error", tone: "err", line: e.line,
-      text: `Name error${where}: \`${e.name}\` is not defined.${hint}`,
-    };
+  const err = result.error;
+  let where = "";
+  if (err.line) where = ` on line ${err.line}`;
+
+  if (err.type === "NameError" && err.name) {
+    let text = `Name error${where}: \`${err.name}\` is not defined.`;
+    if (err.suggestion) text += ` Did you mean \`${err.suggestion}\`?`;
+    return { kind: "error", tone: "err", line: err.line, text: text };
   }
-  const friendly = FRIENDLY[e.type] ? " " + FRIENDLY[e.type](e) : "";
-  const readableType = e.type.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/ Error$/, " error");
-  return {
-    kind: "error", tone: "err", line: e.line,
-    text: `${readableType}${where}: ${e.message}.${friendly}`.replace(/\.\./g, "."),
-  };
+
+  // extra plain-English help for common errors
+  let extra = "";
+  if (err.type === "ZeroDivisionError") extra = " You divided by zero.";
+  if (err.type === "IndexError") extra = " You asked for a position that is not in the list.";
+  if (err.type === "KeyError") extra = ` The key ${err.message} is not in the dictionary.`;
+  if (err.type === "TypeError") extra = ` Two things that don't fit together: ${err.message}.`;
+
+  // "ZeroDivisionError" -> "Zero Division error"
+  let name = err.type.replace(/([a-z])([A-Z])/g, "$1 $2");
+  if (name.endsWith(" Error")) name = name.slice(0, -6) + " error";
+
+  let text = `${name}${where}: ${err.message}.${extra}`;
+  text = text.replaceAll("..", ".");
+  return { kind: "error", tone: "err", line: err.line, text: text };
 }
 
-// ------------------------------------------------------------------- success
+// ---------- it worked ----------
+
 function explainSuccess(result) {
-  const parts = ["Done."];
-  const calls = result.events.filter((e) => e.e === "call");
-  const rets = result.events.filter((e) => e.e === "return");
-  const callCounts = countBy(calls, (e) => e.fn);
-  const recursive = [...callCounts].filter(([, n]) => n > 1);
+  let text = "Done.";
+  let addedSomething = false;
 
-  if (recursive.length) {
-    const [fn, n] = recursive[0];
-    const back = rets.filter((e) => e.fn === fn).length;
-    parts.push(
-      back === n
-        ? `\`${fn}\` was called ${plural(n, "time")}, and every call came back.`
-        : `\`${fn}\` was called ${plural(n, "time")}.`,
-    );
+  // a function that got called more than once (usually recursion)
+  const calls = callEvents(result.events);
+  const callNames = [];
+  for (const c of calls) callNames.push(c.fn);
+  const callCounts = countEach(callNames);
+  for (const fn in callCounts) {
+    const n = callCounts[fn];
+    if (n <= 1) continue;
+    let returned = 0;
+    for (const ev of result.events) if (ev.e === "return" && ev.fn === fn) returned++;
+    if (returned === n) text += ` \`${fn}\` was called ${plural(n, "time")}, and every call came back.`;
+    else text += ` \`${fn}\` was called ${plural(n, "time")}.`;
+    addedSomething = true;
+    break; // just talk about the first one
   }
 
-  const iterations = loopIterations(result.events);
-  for (const [header, n] of [...iterations].slice(0, 2)) {
-    parts.push(`The loop on line ${header} ran ${plural(n, "time")}.`);
+  // loops (only the first 2 so it doesn't talk forever)
+  const rounds = loopRounds(result.events);
+  let loopsSaid = 0;
+  for (const loopLine in rounds) {
+    if (loopsSaid === 2) break;
+    text += ` The loop on line ${loopLine} ran ${plural(rounds[loopLine], "time")}.`;
+    loopsSaid++;
+    addedSomething = true;
   }
 
-  const lines = (result.output || "").split("\n").filter(Boolean).length;
-  if (parts.length === 1) parts.push(lines ? `It printed ${plural(lines, "line")}.` : "It printed nothing.");
-  return { kind: "ok", tone: "ok", line: null, text: parts.join(" ") };
+  if (!addedSomething) {
+    const lines = (result.output || "").split("\n").filter((l) => l !== "").length;
+    if (lines > 0) text += ` It printed ${plural(lines, "line")}.`;
+    else text += " It printed nothing.";
+  }
+  return { kind: "ok", tone: "ok", line: null, text: text };
 }
 
-// ---------------------------------------------------------------------- main
+// ---------- main function ----------
+
 export function analyze(result) {
   if (!result) return { kind: "none", tone: "err", line: null, text: "Nothing ran." };
 
   if (result.status === "syntax") {
-    const e = result.error;
-    return {
-      kind: "syntax", tone: "err", line: e.line,
-      text: `Syntax error on line ${e.line}: ${e.message}.`,
-    };
+    const err = result.error;
+    return { kind: "syntax", tone: "err", line: err.line, text: `Syntax error on line ${err.line}: ${err.message}.` };
   }
   if (result.status === "timeout") {
     return { kind: "timeout", tone: "err", line: null, text: "Your code ran for too long and was stopped." };
   }
-  if (looksLikeRunawayRecursion(result)) return explainRecursion(result);
+  if (isRunawayRecursion(result)) return explainRecursion(result);
 
   if (result.status === "budget") {
-    const iterations = loopIterations(result.events);
-    if (iterations.size) return explainRunawayLoop(result, iterations);
-    return {
-      kind: "budget", tone: "err", line: null,
-      text: `Your code took more than ${fmt(result.steps)} steps, so it was stopped.`,
-    };
+    const rounds = loopRounds(result.events);
+    if (Object.keys(rounds).length > 0) return explainRunawayLoop(result, rounds);
+    return { kind: "budget", tone: "err", line: null, text: `Your code took more than ${withCommas(result.steps)} steps, so it was stopped.` };
   }
   if (result.status === "error") return explainError(result);
   return explainSuccess(result);

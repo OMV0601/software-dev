@@ -1,24 +1,24 @@
-// Web Worker: runs real Python (Pyodide) off the main thread.
+// This runs in a Web Worker (a separate thread), so if the student's code
+// loops forever, the page doesn't freeze.
 //
-// Why a worker? If the student's code loops forever, it would freeze the page.
-// In a worker it runs on its own thread, the page stays responsive, and the
-// main thread can kill the worker at any time (see python.js).
-//
-// Messages in:  { id, type: "init" | "parse" | "run", code?, baseUrl? }
-// Messages out: { id, ok: true, result } or { id, ok: false, error }
+// It loads Pyodide (real Python compiled to WebAssembly) and runs our
+// helpers.py functions when the main page asks.
 
-import helpersSource from "./helpers.py?raw";
+import helpersCode from "./helpers.py?raw"; // Vite gives us the file as a string
 
 let pyodide = null;
 let parseTree = null;
 let traceRun = null;
 
-async function init(baseUrl) {
+async function loadPython(baseUrl) {
   if (pyodide) return { version: pyodide.version };
-  const indexURL = new URL("pyodide/", baseUrl).href;
-  const { loadPyodide } = await import(/* @vite-ignore */ indexURL + "pyodide.mjs");
-  pyodide = await loadPyodide({ indexURL });
-  pyodide.FS.writeFile("/home/pyodide/echocode_helpers.py", helpersSource);
+  // Pyodide's files are in public/pyodide (copied there by scripts/copy-pyodide.mjs)
+  const folder = new URL("pyodide/", baseUrl).href;
+  const pyodideModule = await import(/* @vite-ignore */ folder + "pyodide.mjs");
+  pyodide = await pyodideModule.loadPyodide({ indexURL: folder });
+
+  // save helpers.py into Pyodide's pretend file system, then import it
+  pyodide.FS.writeFile("/home/pyodide/echocode_helpers.py", helpersCode);
   pyodide.runPython("import sys; sys.path.insert(0, '/home/pyodide')");
   const helpers = pyodide.pyimport("echocode_helpers");
   parseTree = helpers.parse_tree;
@@ -26,25 +26,28 @@ async function init(baseUrl) {
   return { version: pyodide.version };
 }
 
-// Convert a Python dict into a plain JS object that can be posted.
-function toJs(pyResult) {
-  try {
-    return pyResult.toJs({ dict_converter: Object.fromEntries, create_pyproxies: false });
-  } finally {
-    pyResult.destroy();
-  }
+// Python dictionaries have to be turned into JS objects before sending them
+function toJavaScript(pythonValue) {
+  const value = pythonValue.toJs({ dict_converter: Object.fromEntries, create_pyproxies: false });
+  pythonValue.destroy(); // free the memory
+  return value;
 }
 
-self.onmessage = async (event) => {
+self.onmessage = async function (event) {
   const { id, type, code, baseUrl } = event.data;
   try {
     let result;
-    if (type === "init") result = await init(baseUrl);
-    else if (type === "parse") result = toJs(parseTree(code));
-    else if (type === "run") result = toJs(traceRun(code));
-    else throw new Error(`Unknown message type: ${type}`);
-    self.postMessage({ id, ok: true, result });
+    if (type === "init") {
+      result = await loadPython(baseUrl);
+    } else if (type === "parse") {
+      result = toJavaScript(parseTree(code));
+    } else if (type === "run") {
+      result = toJavaScript(traceRun(code));
+    } else {
+      throw new Error("Unknown message type: " + type);
+    }
+    self.postMessage({ id: id, ok: true, result: result });
   } catch (err) {
-    self.postMessage({ id, ok: false, error: String(err && err.message ? err.message : err) });
+    self.postMessage({ id: id, ok: false, error: String(err.message || err) });
   }
 };

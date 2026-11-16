@@ -1,39 +1,47 @@
-// Turns a trace (the list of steps Python took) into a "score": a list of
-// sounds with timings. Pure functions, no audio here, so it is easy to test.
+// Turns the list of steps Python took into a "score": which sound to play
+// and when. No actual sound in here, which makes it easy to test.
 //
-//   call    -> a note one step HIGHER (going up the stairs)
-//   return  -> a note one step LOWER  (coming back down)
-//   loop    -> a tick each time a loop goes round
-//   end     -> chime if it finished, buzz if something went wrong
+//   function call   -> a note one step HIGHER (walking up the stairs)
+//   return          -> a note one step LOWER  (walking back down)
+//   loop goes round -> a tick
+//   the end         -> chime if it worked, buzz if something went wrong
 
-// Major pentatonic scale: any two notes sound good together.
-const PENTATONIC = [0, 2, 4, 7, 9];
-const BASE_FREQ = 196; // G3
-const MAX_LEVEL = 24;  // about 5 octaves; deeper than this stays at the top
+// The pentatonic scale only has 5 notes per octave, and any of them sound
+// good together, so it never sounds out of tune.
+const PENTATONIC = [0, 2, 4, 7, 9]; // semitones above the bottom note
+const LOWEST_NOTE = 196;            // G3, in Hz
+const HIGHEST_LEVEL = 24;           // after this it stays at the top note
 
-export const MAX_AUDIBLE_STEPS = 90;
+export const MAX_SOUNDS = 90; // long runs only play the first 90 sounds
 
-/** Frequency (Hz) for a stair level 0, 1, 2… on the pentatonic scale. */
+// level 0, 1, 2... -> frequency in Hz
 export function levelToFreq(level) {
-  const l = Math.max(0, Math.min(MAX_LEVEL, Math.round(level)));
-  const octave = Math.floor(l / PENTATONIC.length);
-  const semitones = 12 * octave + PENTATONIC[l % PENTATONIC.length];
-  return BASE_FREQ * Math.pow(2, semitones / 12);
+  let l = Math.round(level);
+  if (l < 0) l = 0;
+  if (l > HIGHEST_LEVEL) l = HIGHEST_LEVEL;
+  const octave = Math.floor(l / 5);
+  const semitones = 12 * octave + PENTATONIC[l % 5];
+  // every 12 semitones doubles the frequency
+  return LOWEST_NOTE * Math.pow(2, semitones / 12);
 }
 
-/** Where a sound sits around your head. Deeper = further to the right. */
+// where the sound goes. deeper code = further to the right.
+// x = right, y = up, z = forward (negative z is in front of you)
 export function levelToPosition(level) {
-  const d = Math.max(0, Math.min(8, level));
+  let d = level;
+  if (d < 0) d = 0;
+  if (d > 8) d = 8;
   return { x: d * 0.45, y: 0, z: -1.2 };
 }
 
-/** Pick out the events that make a sound. */
+// pick out only the steps that make a sound
 export function audibleSteps(events) {
   const steps = [];
   for (const ev of events) {
     if (ev.e === "call") {
       steps.push({ sound: "call", level: ev.depth, depth: ev.depth, line: ev.line, fn: ev.fn, args: ev.args });
     } else if (ev.e === "return") {
+      // returning from depth 3 plays the note for depth 2 (one step down)
       steps.push({ sound: "return", level: Math.max(0, ev.depth - 1), depth: ev.depth, line: ev.line, fn: ev.fn, value: ev.value });
     } else if (ev.e === "line" && ev.loop != null) {
       steps.push({ sound: "tick", level: ev.depth, depth: ev.depth, line: ev.line, loop: ev.loop });
@@ -42,30 +50,29 @@ export function audibleSteps(events) {
   return steps;
 }
 
-/** Seconds between step i and step i+1. Short programs play slowly and clearly;
- *  long ones speed up, so runaway code sounds like it is spiralling away. */
+// seconds between one sound and the next.
+// short programs play slow and clear. long ones speed up, so runaway code
+// sounds like it's spinning out of control.
 export function stepInterval(i, total) {
   if (total <= 30) return 0.22;
   return Math.max(0.035, 0.2 * Math.pow(0.955, i));
 }
 
-/**
- * Build the full score for a run result.
- * @returns {{ steps: Array, ending: "chime"|"buzz", truncated: boolean, duration: number }}
- */
 export function buildScore(result) {
   const all = audibleSteps(result.events || []);
-  const truncated = all.length > MAX_AUDIBLE_STEPS;
-  const steps = truncated ? all.slice(0, MAX_AUDIBLE_STEPS) : all;
+  const truncated = all.length > MAX_SOUNDS;
+  const steps = all.slice(0, MAX_SOUNDS);
 
-  let t = 0;
-  steps.forEach((s, i) => {
-    s.t = t;
-    s.freq = levelToFreq(s.level);
-    s.pos = levelToPosition(s.level);
-    t += stepInterval(i, steps.length);
-  });
+  let time = 0;
+  for (let i = 0; i < steps.length; i++) {
+    steps[i].t = time;
+    steps[i].freq = levelToFreq(steps[i].level);
+    steps[i].pos = levelToPosition(steps[i].level);
+    time += stepInterval(i, steps.length);
+  }
 
-  const ending = result.status === "ok" ? "chime" : "buzz";
-  return { steps, ending, endAt: t + 0.1, truncated, duration: t + 1.2 };
+  let ending = "buzz";
+  if (result.status === "ok") ending = "chime";
+
+  return { steps: steps, ending: ending, endAt: time + 0.1, truncated: truncated, duration: time + 1.2 };
 }

@@ -1,146 +1,171 @@
-// Explore mode: walk through your code by sound.
+// Explore mode: walk through the code with the arrow keys and hear each block.
 //
-// Each block type has its own sound, played where that block "sits" around
-// your head (deeper = further right), and the voice says a short summary.
+// Each type of block has its own sound, and the sound comes from where the
+// block "sits" (deeper = further right). Then the voice says what it is.
 //
-//   function -> chord     loop -> drum     if / elif / else -> two-note "question"
-//   return -> falling note     anything else -> bell     edge -> dull thud
+//   function -> chord     loop -> drum     if/elif/else -> two-note "question"
+//   return -> note        anything else -> bell        edge -> thud
 
-import { TreeCursor, describe, describeEdge } from "./navigator.js";
+import {
+  makeCursor, isEmpty, currentNode, moveNext, movePrev, moveInside, moveOutside,
+  moveFirst, moveLast, goToLine, getTrail, describeNode, describeEdge,
+} from "./navigator.js";
 import { levelToFreq, levelToPosition } from "./sonify.js";
+import { parseCode } from "./python.js";
+import { startAudio, getTime, playChord, playDrum, playBranch, playNote, playBell, playThud } from "./audio.js";
+import { say } from "./speech.js";
+import { getCode, goToEditorLine, focusEditor, getCurrentLine, getLineText, highlightLine } from "./editor.js";
 
-const BRANCH_KINDS = new Set(["if", "elif", "else", "try", "except", "finally"]);
+let cursor = null;
+let exploring = false;
+let panel = null;        // the Explore mode box on the page
+let breadcrumb = null;   // the "for > if > print" trail
+let onSound = null;      // tells the visuals a sound played
+let onModeChange = null; // tells main.js we switched modes
 
-export class Explorer {
-  constructor({ element, breadcrumb, editor, python, audio, speech, onSound = () => {}, onModeChange = () => {} }) {
-    Object.assign(this, { element, breadcrumb, editor, python, audio, speech, onSound, onModeChange });
-    this.cursor = null;
-    this.active = false;
-    element.addEventListener("keydown", (e) => this.onKey(e));
-    element.addEventListener("blur", () => {
-      // Leaving the explorer by clicking elsewhere also leaves Explore mode.
-      if (this.active) this.setActive(false);
-    });
+export function setupExplorer(options) {
+  panel = options.panel;
+  breadcrumb = options.breadcrumb;
+  onSound = options.onSound;
+  onModeChange = options.onModeChange;
+  panel.addEventListener("keydown", handleKey);
+  // if you click somewhere else, leave Explore mode
+  panel.addEventListener("blur", function () {
+    if (exploring) setExploring(false);
+  });
+}
+
+export function isExploring() {
+  return exploring;
+}
+
+export async function toggleExplore() {
+  if (exploring) leaveExplore();
+  else await enterExplore();
+}
+
+async function enterExplore() {
+  startAudio();
+  const parsed = await parseCode(getCode());
+  if (!parsed.ok) {
+    const err = parsed.error;
+    say(`Can't explore yet. Syntax error on line ${err.line}: ${err.message}.`, "err");
+    goToEditorLine(err.line);
+    return;
   }
-
-  async toggle() {
-    if (this.active) this.leave();
-    else await this.enter();
+  cursor = makeCursor(parsed.tree);
+  if (isEmpty(cursor)) {
+    say("The program is empty. Type some code first.");
+    return;
   }
+  // start on whatever line the text cursor was on
+  goToLine(cursor, getCurrentLine());
+  setExploring(true);
+  panel.focus();
+  announce("Explore mode. ");
+}
 
-  async enter() {
-    this.audio.ensure();
-    const parsed = await this.python.parse(this.editor.getCode());
-    if (!parsed.ok) {
-      const e = parsed.error;
-      this.speech.say(`Can't explore yet. Syntax error on line ${e.line}: ${e.message}.`, { tone: "err" });
-      this.editor.gotoLine(e.line);
-      return;
-    }
-    this.cursor = new TreeCursor(parsed.tree);
-    if (this.cursor.empty) {
-      this.speech.say("The program is empty. Type some code first.");
-      return;
-    }
-    this.cursor.goToLine(this.editor.currentLine());
-    this.setActive(true);
-    this.element.focus();
-    this.announce("Explore mode. ");
+// go back to typing, with the text cursor on the block you were on
+export function leaveExplore() {
+  let line = null;
+  if (cursor && !isEmpty(cursor)) line = currentNode(cursor).line;
+  setExploring(false);
+  highlightLine(null);
+  if (line) {
+    goToEditorLine(line);
+    say(`Editing, line ${line}.`);
+  } else {
+    focusEditor();
+    say("Editing.");
   }
+}
 
-  /** Back to the editor, with the text cursor on the block you were on. */
-  leave() {
-    const line = this.cursor && !this.cursor.empty ? this.cursor.node.line : null;
-    this.setActive(false);
-    this.editor.highlightLine(null);
-    if (line) this.editor.gotoLine(line);
-    else this.editor.focus();
-    this.speech.say(line ? `Editing, line ${line}.` : "Editing.");
+export function setExploring(on) {
+  exploring = on;
+  if (on) panel.classList.add("active");
+  else panel.classList.remove("active");
+  onModeChange(on);
+  if (!on) breadcrumb.innerHTML = "";
+}
+
+function handleKey(e) {
+  if (!exploring || e.ctrlKey || e.metaKey || e.altKey) return;
+
+  let result = null;
+  if (e.key === "ArrowDown") result = moveNext(cursor);
+  else if (e.key === "ArrowUp") result = movePrev(cursor);
+  else if (e.key === "ArrowRight") result = moveInside(cursor);
+  else if (e.key === "ArrowLeft") result = moveOutside(cursor);
+  else if (e.key === "Home") result = moveFirst(cursor);
+  else if (e.key === "End") result = moveLast(cursor);
+
+  if (result !== null) {
+    e.preventDefault();
+    if (result.moved) announce("");
+    else bump(result.edge);
+  } else if (e.key === " ") {
+    e.preventDefault();
+    readWholeLine();
+  } else if (e.key === "Enter" || e.key === "Escape") {
+    e.preventDefault();
+    leaveExplore();
+  } else if (e.key === "h" || e.key === "H" || e.key === "?") {
+    e.preventDefault();
+    say("Explore mode keys. Down and up move between statements. Right goes inside a block. " +
+        "Left goes back out. Home and End jump to the first or last statement. " +
+        "Space reads the whole line. Enter or Escape goes back to editing on this line.");
   }
+}
 
-  setActive(on) {
-    this.active = on;
-    this.element.classList.toggle("active", on);
-    this.onModeChange(on);
-    if (!on) this.breadcrumb.replaceChildren();
-  }
+// play the block's sound, say what it is, and update the screen
+function announce(start) {
+  const node = currentNode(cursor);
+  playBlockSound(node);
+  say(start + describeNode(node));
+  highlightLine(node.line);
+  updateBreadcrumb();
+}
 
-  onKey(e) {
-    if (!this.active || e.ctrlKey || e.metaKey || e.altKey) return;
-    const c = this.cursor;
-    const actions = {
-      ArrowDown: () => c.next(),
-      ArrowUp: () => c.prev(),
-      ArrowRight: () => c.enter(),
-      ArrowLeft: () => c.exit(),
-      Home: () => c.first(),
-      End: () => c.last(),
-    };
-    if (actions[e.key]) {
-      e.preventDefault();
-      const res = actions[e.key]();
-      if (res.moved) this.announce();
-      else this.bump(res.edge);
-    } else if (e.key === " ") {
-      e.preventDefault();
-      this.details();
-    } else if (e.key === "Enter" || e.key === "Escape") {
-      e.preventDefault();
-      this.leave();
-    } else if (e.key === "h" || e.key === "H" || e.key === "?") {
-      e.preventDefault();
-      this.speech.say(
-        "Explore mode keys. Down and up move between statements. Right goes inside a block. " +
-          "Left goes back out. Home and End jump to the first or last statement. " +
-          "Space reads the whole line. Enter or Escape goes back to editing on this line.",
-      );
-    }
-  }
+// you tried to go somewhere you can't
+function bump(edge) {
+  playThud(getTime());
+  onSound({ kind: "edge", pos: { x: 0, y: -0.3, z: -1 }, level: 0 });
+  say(describeEdge(edge, cursor));
+}
 
-  /** Play the block's sound in 3D, say what it is, update the visuals. */
-  announce(prefix = "") {
-    const node = this.cursor.node;
-    this.playNodeSound(node);
-    this.speech.say(prefix + describe(node));
-    this.editor.highlightLine(node.line);
-    this.renderBreadcrumb();
-  }
+function readWholeLine() {
+  const node = currentNode(cursor);
+  const text = getLineText(node.line).trim();
+  playBlockSound(node);
+  let inside = "";
+  if (node.children.length > 0) inside = ` It contains lines ${node.children[0].line} to ${node.endLine}.`;
+  say(`Line ${node.line}, nesting level ${node.depth + 1}: \`${text}\`.${inside}`);
+}
 
-  bump(edge) {
-    this.audio.thud(this.audio.now);
-    this.onSound({ kind: "edge", pos: { x: 0, y: -0.3, z: -1 }, level: 0 });
-    this.speech.say(describeEdge(edge, this.cursor));
-  }
+function playBlockSound(node) {
+  const time = getTime() + 0.01;
+  const pos = levelToPosition(node.depth);
+  const freq = levelToFreq(node.depth + 5);
+  const kind = node.kind;
 
-  details() {
-    const node = this.cursor.node;
-    const text = this.editor.lineText(node.line).trim();
-    this.playNodeSound(node);
-    const inside = node.children.length ? ` It contains lines ${node.children[0].line} to ${node.endLine}.` : "";
-    this.speech.say(`Line ${node.line}, nesting level ${node.depth + 1}: \`${text}\`.${inside}`);
-  }
+  if (kind === "function" || kind === "class") playChord(freq, time, pos);
+  else if (kind === "for" || kind === "while") playDrum(time, pos);
+  else if (["if", "elif", "else", "try", "except", "finally"].includes(kind)) playBranch(freq, time, pos);
+  else if (kind === "return") playNote(freq, time, pos, 0.35, 0.3);
+  else playBell(freq, time, pos);
 
-  playNodeSound(node) {
-    const a = this.audio;
-    const t = a.now + 0.01;
-    const level = node.depth;
-    const pos = levelToPosition(level);
-    const freq = levelToFreq(level + 5);
-    if (node.kind === "function" || node.kind === "class") a.chord(freq, t, pos);
-    else if (node.kind === "for" || node.kind === "while") a.drum(t, pos);
-    else if (BRANCH_KINDS.has(node.kind)) a.branch(freq, t, pos);
-    else if (node.kind === "return") a.note(freq, t, pos, { peak: 0.35, decay: 0.3 });
-    else a.bell(freq, t, pos);
-    this.onSound({ kind: node.kind, pos, level, label: node.label.length > 22 ? node.label.slice(0, 21) + "…" : node.label });
-  }
+  let label = node.label;
+  if (label.length > 22) label = label.slice(0, 21) + "…";
+  onSound({ kind: kind, pos: pos, level: node.depth, label: label });
+}
 
-  renderBreadcrumb() {
-    const items = this.cursor.trail().map((n, i, all) => {
-      const li = document.createElement("li");
-      li.textContent = n.label;
-      if (i === all.length - 1) li.className = "current";
-      return li;
-    });
-    this.breadcrumb.replaceChildren(...items);
+function updateBreadcrumb() {
+  breadcrumb.innerHTML = "";
+  const trail = getTrail(cursor);
+  for (let i = 0; i < trail.length; i++) {
+    const item = document.createElement("li");
+    item.textContent = trail[i].label;
+    if (i === trail.length - 1) item.className = "current";
+    breadcrumb.appendChild(item);
   }
 }

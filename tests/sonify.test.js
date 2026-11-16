@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { audibleSteps, buildScore, levelToFreq, levelToPosition, MAX_AUDIBLE_STEPS } from "../src/sonify.js";
+import { audibleSteps, buildScore, levelToFreq, levelToPosition, MAX_SOUNDS } from "../src/sonify.js";
 
 const call = (depth) => ({ e: "call", line: 1, depth, fn: "f" });
 const ret = (depth) => ({ e: "return", line: 3, depth, fn: "f" });
@@ -54,7 +54,7 @@ describe("buildScore", () => {
   it("caps very long runs and marks them truncated", () => {
     const events = Array.from({ length: 400 }, (_, i) => call(i + 1));
     const score = buildScore({ status: "error", events });
-    expect(score.steps).toHaveLength(MAX_AUDIBLE_STEPS);
+    expect(score.steps).toHaveLength(MAX_SOUNDS);
     expect(score.truncated).toBe(true);
   });
   it("speeds up long runs so they sound like they are spiralling", () => {

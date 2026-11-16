@@ -1,106 +1,115 @@
-// CodeMirror 6 editor setup.
-//
-// CodeMirror is used because it is keyboard-first and works with screen
-// readers (it uses a real contenteditable element with ARIA attributes).
-// Also exposes a "running line" highlight used while code is playing.
+// The code editor. We use CodeMirror because it works with the keyboard
+// and with screen readers out of the box.
 
 import { basicSetup } from "codemirror";
-import { EditorView, Decoration, keymap } from "@codemirror/view";
-import { EditorState, StateEffect, StateField, Prec } from "@codemirror/state";
+import { EditorView, Decoration } from "@codemirror/view";
+import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
+import { tags } from "@lezer/highlight";
 
-// High-contrast colours for a dark background (also helps low-vision users).
-const highlight = HighlightStyle.define([
-  { tag: [t.keyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "#f472b6", fontWeight: "600" },
-  { tag: [t.function(t.definition(t.variableName)), t.definition(t.className)], color: "#22d3ee", fontWeight: "600" },
-  { tag: [t.number, t.bool, t.null], color: "#fbbf24" },
-  { tag: [t.string, t.special(t.string)], color: "#86efac" },
-  { tag: t.comment, color: "#8b9bb0", fontStyle: "italic" },
-  { tag: [t.operator, t.compareOperator, t.arithmeticOperator], color: "#c4b5fd" },
-  { tag: [t.function(t.variableName), t.standard(t.variableName)], color: "#93c5fd" },
-  { tag: [t.self, t.atom], color: "#fca5a5" },
+let view = null;
+
+// brighter colours than the default, easier to see on a dark background
+const colors = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword], color: "#f472b6", fontWeight: "600" },
+  { tag: [tags.function(tags.definition(tags.variableName)), tags.definition(tags.className)], color: "#22d3ee", fontWeight: "600" },
+  { tag: [tags.number, tags.bool, tags.null], color: "#fbbf24" },
+  { tag: [tags.string], color: "#86efac" },
+  { tag: tags.comment, color: "#8b9bb0", fontStyle: "italic" },
+  { tag: [tags.operator, tags.compareOperator, tags.arithmeticOperator], color: "#c4b5fd" },
+  { tag: [tags.function(tags.variableName), tags.standard(tags.variableName)], color: "#93c5fd" },
 ]);
 
-const setRunningLine = StateEffect.define();
+// ---------- highlighting the line that's running ----------
+// This is the way CodeMirror wants you to add highlights: you send it an
+// "effect" saying which line, and a "state field" keeps track of it.
+// (It's based on the "Decorations" example in the CodeMirror docs.)
+const setHighlight = StateEffect.define();
 
-const runningLineField = StateField.define({
-  create: () => Decoration.none,
-  update(deco, tr) {
-    deco = deco.map(tr.changes);
-    for (const effect of tr.effects) {
-      if (!effect.is(setRunningLine)) continue;
-      const { line, tone } = effect.value || {};
-      if (!line || line > tr.state.doc.lines) {
-        deco = Decoration.none;
+const highlightField = StateField.define({
+  create() {
+    return Decoration.none;
+  },
+  update(highlights, transaction) {
+    highlights = highlights.map(transaction.changes); // move it if text was typed
+    for (const effect of transaction.effects) {
+      if (!effect.is(setHighlight)) continue;
+      const info = effect.value;
+      if (!info || info.line > transaction.state.doc.lines) {
+        highlights = Decoration.none; // remove the highlight
       } else {
-        const from = tr.state.doc.line(line).from;
-        deco = Decoration.set([
-          Decoration.line({ class: `cm-running cm-running-${tone || "normal"}` }).range(from),
-        ]);
+        const lineStart = transaction.state.doc.line(info.line).from;
+        const style = Decoration.line({ class: "cm-running cm-running-" + info.tone });
+        highlights = Decoration.set([style.range(lineStart)]);
       }
     }
-    return deco;
+    return highlights;
   },
-  provide: (f) => EditorView.decorations.from(f),
+  provide: (field) => EditorView.decorations.from(field),
 });
 
-const theme = EditorView.theme(
-  {
-    "&": { height: "100%", fontSize: "var(--code-size)" },
-    ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.6" },
-    ".cm-content": { caretColor: "var(--accent)" },
-    ".cm-gutters": { background: "var(--panel)", color: "var(--muted)", border: "none" },
-    ".cm-activeLine": { background: "var(--active-line)" },
-    ".cm-activeLineGutter": { background: "var(--active-line)" },
-    ".cm-running-normal": { background: "var(--run-line)", boxShadow: "inset 4px 0 0 var(--accent)" },
-    ".cm-running-error": { background: "var(--err-line)", boxShadow: "inset 4px 0 0 var(--err)" },
-    ".cm-running-ok": { background: "var(--ok-line)", boxShadow: "inset 4px 0 0 var(--ok)" },
-  },
-  { dark: true },
-);
+const look = EditorView.theme({
+  "&": { height: "100%", fontSize: "var(--code-size)" },
+  ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.6" },
+  ".cm-content": { caretColor: "var(--accent)" },
+  ".cm-gutters": { background: "var(--panel)", color: "var(--muted)", border: "none" },
+  ".cm-activeLine": { background: "var(--active-line)" },
+  ".cm-activeLineGutter": { background: "var(--active-line)" },
+  ".cm-running-normal": { background: "var(--run-line)", boxShadow: "inset 4px 0 0 var(--accent)" },
+  ".cm-running-error": { background: "var(--err-line)", boxShadow: "inset 4px 0 0 var(--err)" },
+  ".cm-running-ok": { background: "var(--ok-line)", boxShadow: "inset 4px 0 0 var(--ok)" },
+}, { dark: true });
 
-export function createEditor(parent, { doc = "", onChange = () => {}, extraKeys = [] } = {}) {
-  const view = new EditorView({
-    parent,
+export function setupEditor(parent, startingCode) {
+  view = new EditorView({
+    parent: parent,
     state: EditorState.create({
-      doc,
+      doc: startingCode,
       extensions: [
-        // Our shortcuts win over CodeMirror's defaults.
-        Prec.highest(keymap.of(extraKeys)),
         basicSetup,
         python(),
-        syntaxHighlighting(highlight, { fallback: false }),
-        theme,
-        runningLineField,
+        syntaxHighlighting(colors),
+        look,
+        highlightField,
         EditorView.contentAttributes.of({ "aria-label": "Python code editor" }),
-        EditorView.updateListener.of((u) => u.docChanged && onChange(u.state.doc.toString())),
       ],
     }),
   });
+}
 
-  return {
-    view,
-    getCode: () => view.state.doc.toString(),
-    setCode(code) {
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: code } });
-    },
-    focus: () => view.focus(),
-    // Put the text cursor at the end of a line (used when leaving Explore mode).
-    gotoLine(line) {
-      const n = Math.min(Math.max(1, line), view.state.doc.lines);
-      const pos = view.state.doc.line(n).to;
-      view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
-      view.focus();
-    },
-    currentLine: () => view.state.doc.lineAt(view.state.selection.main.head).number,
-    lineText(line) {
-      if (line < 1 || line > view.state.doc.lines) return "";
-      return view.state.doc.line(line).text;
-    },
-    highlightLine(line, tone = "normal") {
-      view.dispatch({ effects: setRunningLine.of(line ? { line, tone } : null) });
-    },
-  };
+export function getCode() {
+  return view.state.doc.toString();
+}
+
+export function setCode(code) {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: code } });
+}
+
+export function focusEditor() {
+  view.focus();
+}
+
+// put the text cursor at the end of a line
+export function goToEditorLine(line) {
+  const lineCount = view.state.doc.lines;
+  const n = Math.min(Math.max(1, line), lineCount);
+  view.dispatch({ selection: { anchor: view.state.doc.line(n).to }, scrollIntoView: true });
+  view.focus();
+}
+
+export function getCurrentLine() {
+  return view.state.doc.lineAt(view.state.selection.main.head).number;
+}
+
+export function getLineText(line) {
+  if (line < 1 || line > view.state.doc.lines) return "";
+  return view.state.doc.line(line).text;
+}
+
+// tone is "normal", "ok" or "error". Pass null to remove the highlight.
+export function highlightLine(line, tone = "normal") {
+  let value = null;
+  if (line) value = { line: line, tone: tone };
+  view.dispatch({ effects: setHighlight.of(value) });
 }

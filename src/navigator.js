@@ -1,153 +1,171 @@
-// Tree cursor: moves around the code tree from parse_tree().
+// Moving around the code tree with the arrow keys (Explore mode).
 //
-//   ↓ next statement   ↑ previous statement
-//   → go inside a block (function, loop, if…)   ← go back out
+// The "cursor" remembers where you are as a path of numbers.
+// Example: path [0, 1] means "the 1st block at the top, then the 2nd thing inside it".
 //
-// Pure logic, no sound or DOM, so it is easy to test. The cursor is a "path":
-// a list of child indexes from the root, e.g. [0, 1] = 2nd statement inside
-// the 1st top-level block.
+//   down = next block      up = previous block
+//   right = go inside      left = go back out
 
 import { plural } from "./speakable.js";
 
-export class TreeCursor {
-  constructor(root) {
-    this.root = root;
-    this.path = root.children.length ? [0] : [];
-  }
-
-  get node() {
-    let n = this.root;
-    for (const i of this.path) n = n.children[i];
-    return n;
-  }
-
-  get parent() {
-    let n = this.root;
-    for (const i of this.path.slice(0, -1)) n = n.children[i];
-    return n;
-  }
-
-  get empty() {
-    return this.path.length === 0;
-  }
-
-  /** Each move returns { moved, edge? } so the caller knows what to play. */
-  next() {
-    if (this.empty) return { moved: false, edge: "empty" };
-    const last = this.path.length - 1;
-    if (this.path[last] + 1 >= this.parent.children.length) return { moved: false, edge: "end" };
-    this.path[last]++;
-    return { moved: true };
-  }
-
-  prev() {
-    if (this.empty) return { moved: false, edge: "empty" };
-    const last = this.path.length - 1;
-    if (this.path[last] === 0) return { moved: false, edge: "start" };
-    this.path[last]--;
-    return { moved: true };
-  }
-
-  enter() {
-    if (this.empty) return { moved: false, edge: "empty" };
-    if (!this.node.children.length) return { moved: false, edge: "leaf" };
-    this.path.push(0);
-    return { moved: true };
-  }
-
-  exit() {
-    if (this.path.length <= 1) return { moved: false, edge: "top" };
-    this.path.pop();
-    return { moved: true };
-  }
-
-  first() {
-    if (this.empty) return { moved: false, edge: "empty" };
-    const moved = this.path[this.path.length - 1] !== 0;
-    this.path[this.path.length - 1] = 0;
-    return { moved, edge: moved ? undefined : "start" };
-  }
-
-  last() {
-    if (this.empty) return { moved: false, edge: "empty" };
-    const end = this.parent.children.length - 1;
-    const moved = this.path[this.path.length - 1] !== end;
-    this.path[this.path.length - 1] = end;
-    return { moved, edge: moved ? undefined : "end" };
-  }
-
-  /** Jump to the deepest block that contains a line (e.g. the editor's cursor). */
-  goToLine(line) {
-    const path = [];
-    let n = this.root;
-    for (;;) {
-      const i = n.children.findIndex((c) => c.line <= line && line <= c.endLine);
-      if (i === -1) break;
-      path.push(i);
-      n = n.children[i];
-    }
-    if (path.length) this.path = path;
-    return path.length > 0;
-  }
-
-  /** Nodes from the top level down to the current one. */
-  trail() {
-    const out = [];
-    let n = this.root;
-    for (const i of this.path) {
-      n = n.children[i];
-      out.push(n);
-    }
-    return out;
-  }
+export function makeCursor(tree) {
+  let path = [];
+  if (tree.children.length > 0) path = [0];
+  return { tree: tree, path: path };
 }
 
-// ---------------------------------------------------------------- describing
+export function isEmpty(cursor) {
+  return cursor.path.length === 0;
+}
 
-/** Short spoken name for a block, with `code` in backticks. */
+// follow the path down the tree to find the block we're on
+export function currentNode(cursor) {
+  let node = cursor.tree;
+  for (const index of cursor.path) node = node.children[index];
+  return node;
+}
+
+// the block that contains the current one
+export function parentNode(cursor) {
+  let node = cursor.tree;
+  for (let i = 0; i < cursor.path.length - 1; i++) node = node.children[cursor.path[i]];
+  return node;
+}
+
+// Each move returns { moved: true } or { moved: false, edge: "..." }
+// so we know whether to play the block's sound or the "thud".
+
+export function moveNext(cursor) {
+  if (isEmpty(cursor)) return { moved: false, edge: "empty" };
+  const last = cursor.path.length - 1;
+  if (cursor.path[last] + 1 >= parentNode(cursor).children.length) return { moved: false, edge: "end" };
+  cursor.path[last]++;
+  return { moved: true };
+}
+
+export function movePrev(cursor) {
+  if (isEmpty(cursor)) return { moved: false, edge: "empty" };
+  const last = cursor.path.length - 1;
+  if (cursor.path[last] === 0) return { moved: false, edge: "start" };
+  cursor.path[last]--;
+  return { moved: true };
+}
+
+export function moveInside(cursor) {
+  if (isEmpty(cursor)) return { moved: false, edge: "empty" };
+  if (currentNode(cursor).children.length === 0) return { moved: false, edge: "leaf" };
+  cursor.path.push(0);
+  return { moved: true };
+}
+
+export function moveOutside(cursor) {
+  if (cursor.path.length <= 1) return { moved: false, edge: "top" };
+  cursor.path.pop();
+  return { moved: true };
+}
+
+export function moveFirst(cursor) {
+  if (isEmpty(cursor)) return { moved: false, edge: "empty" };
+  const last = cursor.path.length - 1;
+  if (cursor.path[last] === 0) return { moved: false, edge: "start" };
+  cursor.path[last] = 0;
+  return { moved: true };
+}
+
+export function moveLast(cursor) {
+  if (isEmpty(cursor)) return { moved: false, edge: "empty" };
+  const last = cursor.path.length - 1;
+  const end = parentNode(cursor).children.length - 1;
+  if (cursor.path[last] === end) return { moved: false, edge: "end" };
+  cursor.path[last] = end;
+  return { moved: true };
+}
+
+// jump to the deepest block that contains this line (used when you start
+// Explore mode, so it starts where your text cursor was)
+export function goToLine(cursor, line) {
+  const newPath = [];
+  let node = cursor.tree;
+  let found = true;
+  while (found) {
+    found = false;
+    for (let i = 0; i < node.children.length; i++) {
+      const child = node.children[i];
+      if (child.line <= line && line <= child.endLine) {
+        newPath.push(i);
+        node = child;
+        found = true;
+        break;
+      }
+    }
+  }
+  if (newPath.length > 0) cursor.path = newPath;
+  return newPath.length > 0;
+}
+
+// every block from the top down to where we are (for the breadcrumb)
+export function getTrail(cursor) {
+  const trail = [];
+  let node = cursor.tree;
+  for (const index of cursor.path) {
+    node = node.children[index];
+    trail.push(node);
+  }
+  return trail;
+}
+
+// ---------- what the voice says ----------
+
+// a short name for a block. `backticks` = code
 export function nodeName(node) {
   const label = node.label || "";
-  switch (node.kind) {
-    case "function": {
-      const m = label.match(/^(\w+)\((.*)\)$/);
-      if (!m) return `function \`${label}\``;
-      return m[2] ? `function \`${m[1]}\`, takes \`${m[2]}\`` : `function \`${m[1]}\`, takes nothing`;
-    }
-    case "class": return `class \`${label}\``;
-    case "for": return `for loop, \`${label}\``;
-    case "while": return `while loop, \`${label}\``;
-    case "if":
-    case "elif": return `\`${label}\``;
-    case "else": return "else";
-    case "try": return "try block";
-    case "except": return `\`${label}\``;
-    case "finally": return "finally";
-    case "print": return `print, \`${label.replace(/^print\((.*)\)$/, "$1")}\``;
-    case "return": return label === "return" ? "return" : `return \`${label.replace(/^return /, "")}\``;
-    case "module": return "program";
-    default: return `\`${label}\``;
+  if (node.kind === "function") {
+    // label looks like "countdown(n)"
+    const name = label.split("(")[0];
+    const args = label.slice(name.length + 1, -1);
+    if (args === "") return `function \`${name}\`, takes nothing`;
+    return `function \`${name}\`, takes \`${args}\``;
   }
+  if (node.kind === "class") return `class \`${label}\``;
+  if (node.kind === "for") return `for loop, \`${label}\``;
+  if (node.kind === "while") return `while loop, \`${label}\``;
+  if (node.kind === "if" || node.kind === "elif" || node.kind === "except") return `\`${label}\``;
+  if (node.kind === "else") return "else";
+  if (node.kind === "try") return "try block";
+  if (node.kind === "finally") return "finally";
+  if (node.kind === "print") {
+    // "print(n)" -> just say what's inside
+    let inside = label;
+    if (inside.startsWith("print(") && inside.endsWith(")")) inside = inside.slice(6, -1);
+    return `print, \`${inside}\``;
+  }
+  if (node.kind === "return") {
+    if (label === "return") return "return";
+    return `return \`${label.slice(7)}\``;
+  }
+  if (node.kind === "module") return "program";
+  return `\`${label}\``;
 }
 
-/** What the voice says when you land on a block. */
-export function describe(node) {
+// what you hear when you land on a block
+export function describeNode(node) {
   let text = `${nodeName(node)}, line ${node.line}`;
-  if (node.children && node.children.length) {
+  if (node.children && node.children.length > 0) {
     text += `, ${plural(node.children.length, "statement")} inside`;
   }
   return text + ".";
 }
 
-/** What the voice says when you bump into an edge. */
+// what you hear when you can't go any further
 export function describeEdge(edge, cursor) {
-  const parent = cursor.parent;
-  const where = parent.kind === "module" ? "the program" : nodeName(parent).split(",")[0];
-  switch (edge) {
-    case "end": return `End of ${where}.`;
-    case "start": return `Start of ${where}.`;
-    case "leaf": return "Nothing inside.";
-    case "top": return "Already at the top level.";
-    case "empty": return "The program is empty.";
-    default: return "";
-  }
+  const parent = parentNode(cursor);
+  let where = "the program";
+  if (parent.kind !== "module") where = nodeName(parent).split(",")[0];
+
+  if (edge === "end") return `End of ${where}.`;
+  if (edge === "start") return `Start of ${where}.`;
+  if (edge === "leaf") return "Nothing inside.";
+  if (edge === "top") return "Already at the top level.";
+  if (edge === "empty") return "The program is empty.";
+  return "";
 }

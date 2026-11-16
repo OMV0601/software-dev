@@ -1,61 +1,76 @@
-// Voice output using the browser's built-in speech (Web Speech API).
+// The voice. Uses the browser's built-in text-to-speech (speechSynthesis),
+// so it's instant, free and works offline.
 //
-// - Instant and offline: no network, no API keys.
-// - New speech interrupts old speech, so the voice never lags behind the keys.
-// - Everything spoken is also written to an ARIA live region, so people who
-//   use their own screen reader (NVDA, JAWS, VoiceOver) get the same text.
+// Everything we say also goes into a hidden "live region" on the page.
+// Screen readers (like NVDA or VoiceOver) read live regions out loud too,
+// so people using their own screen reader get the same messages.
 
 import { speakText } from "./speakable.js";
 
-export class Speech {
-  constructor({ liveRegion, onSay = () => {} } = {}) {
-    this.live = liveRegion;
-    this.onSay = onSay;
-    this.rate = 1.3;
-    this.enabled = true;
-    this.last = null;
-    this.voice = null;
-    this.synth = typeof window !== "undefined" ? window.speechSynthesis : null;
-    if (this.synth) {
-      const pick = () => {
-        const voices = this.synth.getVoices();
-        this.voice =
-          voices.find((v) => /en[-_]US/i.test(v.lang) && v.localService) ||
-          voices.find((v) => /^en/i.test(v.lang)) ||
-          null;
-      };
-      pick();
-      this.synth.addEventListener?.("voiceschanged", pick);
+let liveRegion = null;
+let showCaption = null;
+let voiceSpeed = 1.3;
+let lastMessage = null;
+let chosenVoice = null;
+
+export function setupSpeech(region, captionFunction) {
+  liveRegion = region;
+  showCaption = captionFunction;
+  if (window.speechSynthesis) {
+    pickVoice();
+    // some browsers load their voices late, so try again when they arrive
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+}
+
+function pickVoice() {
+  const voices = window.speechSynthesis.getVoices();
+  chosenVoice = null;
+  // prefer an American English voice that's installed on the computer
+  for (const voice of voices) {
+    if ((voice.lang === "en-US" || voice.lang === "en_US") && voice.localService) {
+      chosenVoice = voice;
+      return;
     }
   }
-
-  /**
-   * @param {string} text  may contain `code in backticks`
-   * @param {{tone?: string, interrupt?: boolean, remember?: boolean}} opts
-   */
-  say(text, { tone = "info", interrupt = true, remember = true } = {}) {
-    const spoken = speakText(text);
-    if (remember) this.last = { text, tone };
-    this.onSay(text, tone);
-    if (this.live) {
-      // Clearing first makes screen readers announce repeated messages too.
-      this.live.textContent = "";
-      setTimeout(() => (this.live.textContent = spoken), 30);
+  for (const voice of voices) {
+    if (voice.lang.startsWith("en")) {
+      chosenVoice = voice;
+      return;
     }
-    if (!this.enabled || !this.synth) return;
-    if (interrupt) this.synth.cancel();
-    const u = new SpeechSynthesisUtterance(spoken);
-    u.rate = this.rate;
-    if (this.voice) u.voice = this.voice;
-    this.synth.speak(u);
+  }
+}
+
+// text can have `code in backticks`. The caption shows it as code,
+// and the voice reads it in a friendly way (see speakable.js)
+export function say(text, tone = "info") {
+  const spoken = speakText(text);
+  lastMessage = { text: text, tone: tone };
+  if (showCaption) showCaption(text, tone);
+
+  if (liveRegion) {
+    // empty it first, otherwise screen readers skip a message that's the same as the last one
+    liveRegion.textContent = "";
+    setTimeout(function () { liveRegion.textContent = spoken; }, 30);
   }
 
-  repeat() {
-    if (this.last) this.say(this.last.text, { tone: this.last.tone });
-    else this.say("Nothing to repeat yet.");
-  }
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel(); // stop whatever it was saying before
+  const utterance = new SpeechSynthesisUtterance(spoken);
+  utterance.rate = voiceSpeed;
+  if (chosenVoice) utterance.voice = chosenVoice;
+  window.speechSynthesis.speak(utterance);
+}
 
-  stop() {
-    this.synth?.cancel();
-  }
+export function repeatLast() {
+  if (lastMessage) say(lastMessage.text, lastMessage.tone);
+  else say("Nothing to repeat yet.");
+}
+
+export function stopTalking() {
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+
+export function setVoiceSpeed(speed) {
+  voiceSpeed = speed;
 }

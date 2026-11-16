@@ -1,20 +1,23 @@
-import { describe as group, it, expect } from "vitest";
-import { TreeCursor, describe, describeEdge, nodeName } from "../src/navigator.js";
+import { describe, it, expect } from "vitest";
+import {
+  makeCursor, isEmpty, currentNode, parentNode, moveNext, movePrev, moveInside, moveOutside,
+  moveFirst, moveLast, goToLine, getTrail, describeNode, describeEdge, nodeName,
+} from "../src/navigator.js";
 import { getExample } from "../src/examples.js";
 import { pyParse } from "./pyhelpers.js";
 import { speakText } from "../src/speakable.js";
 
 const treeOf = (id) => pyParse(getExample(id).code).tree;
 
-group("TreeCursor on the buggy countdown (README example 3)", () => {
+describe("cursor on the buggy countdown (README example 3)", () => {
   it("walks function -> inside -> statements -> edge, like the README table", () => {
-    const c = new TreeCursor(treeOf("recursion-bug"));
-    const said = [speakText(describe(c.node))];
-    c.enter();
-    said.push(speakText(describe(c.node)));
-    c.next();
-    said.push(speakText(describe(c.node)));
-    const edge = c.next();
+    const c = makeCursor(treeOf("recursion-bug"));
+    const said = [speakText(describeNode(currentNode(c)))];
+    moveInside(c);
+    said.push(speakText(describeNode(currentNode(c))));
+    moveNext(c);
+    said.push(speakText(describeNode(currentNode(c))));
+    const edge = moveNext(c);
     said.push(speakText(describeEdge(edge.edge, c)));
     expect(said).toEqual([
       "function countdown, takes n, line 1, 2 statements inside.",
@@ -24,33 +27,32 @@ group("TreeCursor on the buggy countdown (README example 3)", () => {
     ]);
   });
 
-  it("depth increases going inside and comes back going out", () => {
-    const c = new TreeCursor(treeOf("recursion-bug"));
-    expect(c.node.depth).toBe(0);
-    c.enter();
-    expect(c.node.depth).toBe(1);
-    c.exit();
-    expect(c.node.depth).toBe(0);
-    expect(c.exit()).toEqual({ moved: false, edge: "top" });
+  it("depth goes up going inside and back down going out", () => {
+    const c = makeCursor(treeOf("recursion-bug"));
+    expect(currentNode(c).depth).toBe(0);
+    moveInside(c);
+    expect(currentNode(c).depth).toBe(1);
+    moveOutside(c);
+    expect(currentNode(c).depth).toBe(0);
+    expect(moveOutside(c)).toEqual({ moved: false, edge: "top" });
   });
 
   it("reports edges instead of moving past them", () => {
-    const c = new TreeCursor(treeOf("recursion-bug"));
-    expect(c.prev()).toEqual({ moved: false, edge: "start" });
-    c.enter(); // print(n)
-    expect(c.enter()).toEqual({ moved: false, edge: "leaf" });
+    const c = makeCursor(treeOf("recursion-bug"));
+    expect(movePrev(c)).toEqual({ moved: false, edge: "start" });
+    moveInside(c); // print(n)
+    expect(moveInside(c)).toEqual({ moved: false, edge: "leaf" });
   });
 });
 
-group("TreeCursor on FizzBuzz (nested blocks)", () => {
+describe("cursor on FizzBuzz (nested blocks)", () => {
   it("puts if / elif / else side by side, the way the code looks", () => {
-    const c = new TreeCursor(treeOf("fizzbuzz"));
-    expect(c.node.kind).toBe("for");
-    c.enter();
-    expect(c.parent.children.map((n) => [n.kind, n.line])).toEqual([
-      ["if", 2], ["elif", 4], ["elif", 6], ["else", 8],
-    ]);
-    expect(c.node.children.map((n) => n.kind)).toEqual(["print"]);
+    const c = makeCursor(treeOf("fizzbuzz"));
+    expect(currentNode(c).kind).toBe("for");
+    moveInside(c);
+    const siblings = parentNode(c).children.map((n) => [n.kind, n.line]);
+    expect(siblings).toEqual([["if", 2], ["elif", 4], ["elif", 6], ["else", 8]]);
+    expect(currentNode(c).children.map((n) => n.kind)).toEqual(["print"]);
   });
 
   it("keeps `else:` + a nested `if` nested (it is not an elif)", () => {
@@ -60,33 +62,33 @@ group("TreeCursor on FizzBuzz (nested blocks)", () => {
   });
 
   it("goToLine lands inside the right branch", () => {
-    const c = new TreeCursor(treeOf("fizzbuzz"));
-    c.goToLine(7);
-    expect(c.trail().map((n) => n.label)).toEqual(["for n in range(1, 16)", "elif n % 5 == 0", "print('Buzz')"]);
+    const c = makeCursor(treeOf("fizzbuzz"));
+    goToLine(c, 7);
+    expect(getTrail(c).map((n) => n.label)).toEqual(["for n in range(1, 16)", "elif n % 5 == 0", "print('Buzz')"]);
   });
 
-  it("goToLine jumps to the deepest block on that line", () => {
-    const c = new TreeCursor(treeOf("fizzbuzz"));
-    c.goToLine(3);
-    expect(c.node.line).toBe(3);
-    expect(c.trail().map((n) => n.kind)).toEqual(["for", "if", "print"]);
+  it("goToLine finds the deepest block on a line", () => {
+    const c = makeCursor(treeOf("fizzbuzz"));
+    goToLine(c, 3);
+    expect(currentNode(c).line).toBe(3);
+    expect(getTrail(c).map((n) => n.kind)).toEqual(["for", "if", "print"]);
   });
 
   it("first and last jump within the current level", () => {
-    const c = new TreeCursor(treeOf("recursion-fixed"));
-    c.enter();
-    c.last();
-    expect(c.node.line).toBe(5);
-    c.first();
-    expect(c.node.line).toBe(2);
+    const c = makeCursor(treeOf("recursion-fixed"));
+    moveInside(c);
+    moveLast(c);
+    expect(currentNode(c).line).toBe(5);
+    moveFirst(c);
+    expect(currentNode(c).line).toBe(2);
   });
 });
 
-group("describing nodes", () => {
-  it("speaks conditions and loops naturally", () => {
+describe("describing blocks", () => {
+  it("reads conditions and loops naturally", () => {
     const t = treeOf("loop-fixed");
-    expect(speakText(describe(t.children[0]))).toBe("count becomes 1, line 1.");
-    expect(speakText(describe(t.children[1]))).toBe(
+    expect(speakText(describeNode(t.children[0]))).toBe("count becomes 1, line 1.");
+    expect(speakText(describeNode(t.children[1]))).toBe(
       "while loop, while count is less than or equal to 3, line 2, 2 statements inside.",
     );
   });
@@ -96,8 +98,8 @@ group("describing nodes", () => {
   });
 
   it("handles an empty program", () => {
-    const c = new TreeCursor(pyParse("").tree);
-    expect(c.empty).toBe(true);
-    expect(c.next().edge).toBe("empty");
+    const c = makeCursor(pyParse("").tree);
+    expect(isEmpty(c)).toBe(true);
+    expect(moveNext(c).edge).toBe("empty");
   });
 });

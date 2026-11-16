@@ -51,7 +51,7 @@ class TraceRunTests(unittest.TestCase):
         self.assertEqual(args, ["n=3", "n=2", "n=1", "n=0"])
 
     def test_infinite_loop_hits_the_step_budget(self):
-        r = helpers.trace_run(LOOP_BUG, max_events=500)
+        r = helpers.trace_run(LOOP_BUG, limit=500)
         self.assertEqual(r["status"], "budget")
         self.assertEqual(len(r["events"]), 500)
         snaps = r["loopSnapshots"]["2"]
@@ -64,7 +64,7 @@ class TraceRunTests(unittest.TestCase):
 
     def test_except_exception_cannot_hide_the_budget(self):
         code = "while True:\n    try:\n        pass\n    except Exception:\n        pass\n"
-        self.assertEqual(helpers.trace_run(code, max_events=300)["status"], "budget")
+        self.assertEqual(helpers.trace_run(code, limit=300)["status"], "budget")
 
     def test_name_error_suggests_the_closest_name(self):
         r = helpers.trace_run("total = 0\ntotal = totl + 1\n")
@@ -117,7 +117,7 @@ class ParseTreeTests(unittest.TestCase):
     def test_long_labels_are_shortened(self):
         code = "x = " + " + ".join(["value"] * 40) + "\n"
         label = helpers.parse_tree(code)["tree"]["children"][0]["label"]
-        self.assertLessEqual(len(label), helpers.LABEL_MAX)
+        self.assertLessEqual(len(label), helpers.MAX_LABEL_LENGTH)
         self.assertTrue(label.endswith("…"))
 
 

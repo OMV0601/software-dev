@@ -14,7 +14,7 @@ describe("speakCode", () => {
     ["names.append(x)", "names dot append of x"],
     ["total_price", "total price"],
     ["f()", "f, with nothing inside"],
-    ["print(-1)", "print of negative 1"],
+    ["print(-1)", "print of minus 1"],
   ])("%s -> %s", (code, spoken) => {
     expect(speakCode(code)).toBe(spoken);
   });

@@ -108,7 +108,7 @@ await check("Explore mode: arrow keys walk the code by blocks", async () => {
   await page.click(".cm-content");
   await page.keyboard.press("Control+Home");
   await page.keyboard.press("Control+e");
-  await page.waitForFunction(() => window.echocode.explorer.active, null, { timeout: 15000 });
+  await page.waitForFunction(() => window.echocode.isExploring(), null, { timeout: 15000 });
   expect((await caption()).startsWith("Explore mode. for loop, for n in range(1, 16), line 1"), await caption());
   expect((await press("ArrowRight")).startsWith("if n % 15 == 0, line 2"), await caption());
   expect((await press("ArrowDown")).startsWith("elif n % 3 == 0, line 4"), await caption());
@@ -116,21 +116,21 @@ await check("Explore mode: arrow keys walk the code by blocks", async () => {
   expect((await press("ArrowDown")) === "End of for loop.", await caption());
   expect((await press("ArrowRight")) === "print, n, line 9.", await caption());
   expect((await press("Enter")) === "Editing, line 9.", await caption());
-  expect(await page.evaluate(() => window.echocode.editor.currentLine()) === 9, "editor cursor should be on line 9");
+  expect(await page.evaluate(() => window.echocode.getCurrentLine()) === 9, "editor cursor should be on line 9");
 });
 
 await check("Ctrl+. stops playback", async () => {
   await page.keyboard.press("Alt+1");
   await page.click(".cm-content");
   await page.keyboard.press("Control+Enter");
-  await page.waitForFunction(() => window.echocode.audio.playing, null, { timeout: 30000 });
+  await page.waitForFunction(() => window.echocode.isPlaying(), null, { timeout: 30000 });
   await page.waitForTimeout(300);
   expect((await press("Control+.")) === "Stopped.", await caption());
-  expect(!(await page.evaluate(() => window.echocode.audio.playing)), "audio still playing");
+  expect(!(await page.evaluate(() => window.echocode.isPlaying())), "audio still playing");
 });
 
 await check("Syntax errors are announced and Explore refuses politely", async () => {
-  await page.evaluate(() => window.echocode.editor.setCode("def f(:\n    pass\n"));
+  await page.evaluate(() => window.echocode.setCode("def f(:\n    pass\n"));
   await page.click(".cm-content");
   await page.keyboard.press("Control+e");
   await page.waitForFunction(() => /Syntax error/.test(document.getElementById("caption").textContent), null, { timeout: 15000 });
