@@ -13,6 +13,7 @@ Nothing in here decides anything with AI. It is all ordinary, deterministic code
 
 import ast
 import builtins
+import difflib
 import sys
 
 STUDENT_FILE = "<student>"
@@ -321,6 +322,22 @@ def _student_line(tb, caller=False):
     return lines[-1]
 
 
+def _closest_name(name, module):
+    """For a NameError, the most similar name the student actually defined."""
+    known = set()
+    for node in ast.walk(module):
+        if isinstance(node, ast.Name):
+            known.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            known.add(node.name)
+        elif isinstance(node, ast.arg):
+            known.add(node.arg)
+    known.discard(name)
+    known.update(n for n in dir(builtins) if not n.startswith("_"))
+    match = difflib.get_close_matches(name, sorted(known), n=1, cutoff=0.6)
+    return match[0] if match else None
+
+
 def _no_input(*_args, **_kwargs):
     raise RuntimeError("input() is not supported in EchoCode yet. "
                        "Put the value straight into a variable instead.")
@@ -368,6 +385,11 @@ def trace_run(code, max_events=DEFAULT_MAX_EVENTS):
         status = "error"
         error = {"type": type(err).__name__, "message": _short(str(err), 160),
                  "line": _student_line(err.__traceback__)}
+        if isinstance(err, NameError) and getattr(err, "name", None):
+            error["name"] = err.name
+            suggestion = _closest_name(err.name, module)
+            if suggestion:
+                error["suggestion"] = suggestion
     finally:
         sys.settrace(None)
         sys.stdout = old_stdout
