@@ -1,4 +1,4 @@
-# ECHO CODE (software dev TSA)
+# ECHO CODE 
 
 # 🎧 EchoCode
 
@@ -260,5 +260,5 @@ Then open the local URL in **Chrome** and **put on headphones** 🎧 (needed for
 
 ## 👥 Team
 
-- Name: role
-- Name: role
+- Sushanth: Computer Vision Tester
+- Aviv Chatterjee: Focus on optimization and code readability
