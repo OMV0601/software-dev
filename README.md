@@ -221,3 +221,8 @@ Upload the `dist/` folder to any static host (GitHub Pages, Netlify, Vercel). No
 - [ ] Haptic feedback through game controllers (Gamepad API vibration)
 - [ ] More languages (JavaScript, Java)
 - [ ] Teacher mode: share exercises and see where students get stuck
+
+## 👥 Team
+
+- Sushanth: Computer Vision Tester
+- Aviv Chatterjee: Focus on optimization and code readability
