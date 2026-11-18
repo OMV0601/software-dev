@@ -91,6 +91,26 @@ while x != 10:
     expect(analyze(pyTrace('print("hi")\n')).text).toBe("Done. It printed 1 line.");
   });
 
+  it("a long loop that does finish is reported as finished", () => {
+    const a = analyze(pyTrace("total = 0\nfor i in range(10000):\n    total += i\n"));
+    expect(a.text).toBe("Done. The loop on line 2 ran 10,000 times.");
+  });
+
+  it("deep recursion that does finish is reported as finished", () => {
+    const a = analyze(pyTrace("def f(n):\n    if n == 0:\n        return 0\n    return 1 + f(n - 1)\nprint(f(500))\n"));
+    expect(a.text).toBe("Done. `f` was called 501 times, and every call came back.");
+  });
+
+  it("misspelled return suggests return", () => {
+    const a = analyze(pyTrace("def f(n):\n    if n == 0:\n        retur\n    f(n - 1)\nf(3)\n"));
+    expect(a.text).toBe("Name error on line 3: `retur` is not defined. Did you mean `return`?");
+  });
+
+  it("indentation errors are called indentation errors", () => {
+    const a = analyze(pyTrace("if True:\nprint(1)\n"));
+    expect(a.text).toMatch(/^Indentation error on line 2:/);
+  });
+
   it("timeout", () => {
     expect(analyze({ status: "timeout", events: [] }).kind).toBe("timeout");
   });

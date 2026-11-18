@@ -43,10 +43,18 @@ function callEvents(events) {
 }
 
 // how many times each loop went round, e.g. {"2": 3} means the loop on line 2 ran 3 times
-function loopRounds(events) {
+function loopRounds(result) {
+  // Python counts these for the whole run (we only keep the first 4000 events)
+  if (result.loopCounts) return result.loopCounts;
   const loopLines = [];
-  for (const ev of events) if (ev.loop != null) loopLines.push(ev.loop);
+  for (const ev of result.events) if (ev.loop != null) loopLines.push(ev.loop);
   return countEach(loopLines);
+}
+
+// "ZeroDivisionError" -> "Zero division error", "SyntaxError" -> "Syntax error"
+function readableName(type) {
+  const words = type.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 // ---------- runaway recursion ----------
@@ -54,15 +62,8 @@ function loopRounds(events) {
 function isRunawayRecursion(result) {
   if (result.error && result.error.type === "RecursionError") return true;
   if (result.status !== "budget") return false;
-  // or: it got really deep and the last steps are mostly calls, not returns
-  const lastSteps = result.events.slice(-300);
-  let calls = 0;
-  let returns = 0;
-  for (const ev of lastSteps) {
-    if (ev.e === "call") calls++;
-    if (ev.e === "return") returns++;
-  }
-  return result.maxDepth >= 50 && calls > returns * 2;
+  // or: it got stopped while it was still really deep inside function calls
+  return (result.depthAtEnd || 0) >= 50;
 }
 
 function explainRecursion(result) {
@@ -168,11 +169,7 @@ function explainError(result) {
   if (err.type === "KeyError") extra = ` The key ${err.message} is not in the dictionary.`;
   if (err.type === "TypeError") extra = ` Two things that don't fit together: ${err.message}.`;
 
-  // "ZeroDivisionError" -> "Zero Division error"
-  let name = err.type.replace(/([a-z])([A-Z])/g, "$1 $2");
-  if (name.endsWith(" Error")) name = name.slice(0, -6) + " error";
-
-  let text = `${name}${where}: ${err.message}.${extra}`;
+  let text = `${readableName(err.type)}${where}: ${err.message}.${extra}`;
   text = text.replaceAll("..", ".");
   return { kind: "error", tone: "err", line: err.line, text: text };
 }
@@ -184,15 +181,12 @@ function explainSuccess(result) {
   let addedSomething = false;
 
   // a function that got called more than once (usually recursion)
-  const calls = callEvents(result.events);
-  const callNames = [];
-  for (const c of calls) callNames.push(c.fn);
-  const callCounts = countEach(callNames);
+  const callCounts = result.callCounts || {};
+  const returnCounts = result.returnCounts || {};
   for (const fn in callCounts) {
     const n = callCounts[fn];
     if (n <= 1) continue;
-    let returned = 0;
-    for (const ev of result.events) if (ev.e === "return" && ev.fn === fn) returned++;
+    const returned = returnCounts[fn] || 0;
     if (returned === n) text += ` \`${fn}\` was called ${plural(n, "time")}, and every call came back.`;
     else text += ` \`${fn}\` was called ${plural(n, "time")}.`;
     addedSomething = true;
@@ -200,11 +194,12 @@ function explainSuccess(result) {
   }
 
   // loops (only the first 2 so it doesn't talk forever)
-  const rounds = loopRounds(result.events);
+  const rounds = loopRounds(result);
   let loopsSaid = 0;
   for (const loopLine in rounds) {
     if (loopsSaid === 2) break;
-    text += ` The loop on line ${loopLine} ran ${plural(rounds[loopLine], "time")}.`;
+    const n = rounds[loopLine];
+    text += ` The loop on line ${loopLine} ran ${withCommas(n)} ${n === 1 ? "time" : "times"}.`;
     loopsSaid++;
     addedSomething = true;
   }
@@ -224,7 +219,8 @@ export function analyze(result) {
 
   if (result.status === "syntax") {
     const err = result.error;
-    return { kind: "syntax", tone: "err", line: err.line, text: `Syntax error on line ${err.line}: ${err.message}.` };
+    const name = readableName(err.type || "SyntaxError");
+    return { kind: "syntax", tone: "err", line: err.line, text: `${name} on line ${err.line}: ${err.message}.` };
   }
   if (result.status === "timeout") {
     return { kind: "timeout", tone: "err", line: null, text: "Your code ran for too long and was stopped." };
@@ -232,7 +228,7 @@ export function analyze(result) {
   if (isRunawayRecursion(result)) return explainRecursion(result);
 
   if (result.status === "budget") {
-    const rounds = loopRounds(result.events);
+    const rounds = loopRounds(result);
     if (Object.keys(rounds).length > 0) return explainRunawayLoop(result, rounds);
     return { kind: "budget", tone: "err", line: null, text: `Your code took more than ${withCommas(result.steps)} steps, so it was stopped.` };
   }

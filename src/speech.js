@@ -12,6 +12,7 @@ let showCaption = null;
 let voiceSpeed = 1.3;
 let lastMessage = null;
 let chosenVoice = null;
+let voiceOn = true; // people who already use a screen reader can turn our voice off
 
 export function setupSpeech(region, captionFunction) {
   liveRegion = region;
@@ -54,7 +55,7 @@ export function say(text, tone = "info") {
     setTimeout(function () { liveRegion.textContent = spoken; }, 30);
   }
 
-  if (!window.speechSynthesis) return;
+  if (!voiceOn || !window.speechSynthesis) return;
   window.speechSynthesis.cancel(); // stop whatever it was saying before
   const utterance = new SpeechSynthesisUtterance(spoken);
   utterance.rate = voiceSpeed;
@@ -73,4 +74,14 @@ export function stopTalking() {
 
 export function setVoiceSpeed(speed) {
   voiceSpeed = speed;
+}
+
+// when the voice is off, messages still go to the screen reader (live region) and captions
+export function setVoiceOn(on) {
+  voiceOn = on;
+  if (!on) stopTalking();
+}
+
+export function isVoiceOn() {
+  return voiceOn;
 }

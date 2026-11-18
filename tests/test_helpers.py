@@ -95,6 +95,33 @@ class TraceRunTests(unittest.TestCase):
         self.assertEqual(info["recursiveCallLines"], [5])
 
 
+class JudgeQuestionTests(unittest.TestCase):
+    # "what if..." questions someone might try during a demo
+
+    def test_a_long_but_finite_loop_is_not_called_infinite(self):
+        r = helpers.trace_run("total = 0\nfor i in range(10000):\n    total += i\nprint(total)\n")
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["output"], "49995000\n")
+        self.assertEqual(r["loopCounts"], {"2": 10000})
+        self.assertTrue(r["eventsCut"])  # only the first steps are kept for the sound
+
+    def test_deep_but_finite_recursion_works_like_normal_python(self):
+        code = "def f(n):\n    if n == 0:\n        return 0\n    return 1 + f(n - 1)\nprint(f(500))\n"
+        r = helpers.trace_run(code)
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["callCounts"], {"f": 501})
+        self.assertEqual(r["returnCounts"], {"f": 501})
+
+    def test_misspelled_keyword_suggests_the_keyword(self):
+        code = "def f(n):\n    if n == 0:\n        retur\n    f(n - 1)\nf(3)\n"
+        self.assertEqual(helpers.trace_run(code)["error"]["suggestion"], "return")
+
+    def test_indentation_errors_keep_their_real_name(self):
+        r = helpers.trace_run("if True:\nprint(1)\n")
+        self.assertEqual(r["status"], "syntax")
+        self.assertEqual(r["error"]["type"], "IndentationError")
+
+
 class ParseTreeTests(unittest.TestCase):
     def test_nesting_and_depth(self):
         t = helpers.parse_tree(COUNTDOWN_FIXED)["tree"]

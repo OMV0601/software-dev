@@ -44,17 +44,23 @@ Press **Ctrl + E** for Explore mode. Move through **blocks**, not characters.
 
 Each block type has its own sound: function = chord, loop = drum, if/elif/else = two-note "question", other statements = bell, hitting an edge = thud.
 
-### 3. 🗣️ Plain-English explanations
+### 3. 📍 Always know where you are
+- Moving up or down in the editor reads the line out, **including its indent level** (which matters a lot in Python): *"Line 3, indent 2: return"*.
+- **Alt + L** says which line you're on. **Alt + J** jumps straight to the line with the problem.
+- **Tab** indents. To leave the editor with the keyboard, press **Escape, then Tab**.
+- Your code is **saved automatically**, so refreshing the page doesn't lose your work.
+
+### 4. 🗣️ Plain-English explanations
 After each run, EchoCode says what happened, for example:
 
 - *"Recursion on line 3 went 395 calls deep and never came back. `n` went 3, 2, 1, 0, -1, and kept going. `countdown` has no `if`, so nothing tells it to stop."*
 - *"The while loop on line 2 ran 1,000 times and never stopped. `count` was 1 every single time. Is `count` ever changing?"*
-- *"Name error on line 3: `totl` is not defined. Did you mean `total`?"*
+- *"Name error on line 3: `totl` is not defined. Did you mean `total`?"* (it also catches misspelled keywords: `retur` → *"Did you mean `return`?"*)
 - *"Done. `countdown` was called 4 times, and every call came back."*
 
 Code in messages is read the way a teacher would say it: `count = count + 1` → "count becomes count plus 1".
 
-### 4. 👀 Visuals for sighted viewers
+### 5. 👀 Visuals for sighted viewers
 Teachers, classmates and judges can **see** what the student hears: a top-down view of the listener's head showing where each sound sits, a live **pitch graph** (working recursion draws a mountain; runaway recursion climbs and never comes down), the running line highlighted, and captions of everything spoken.
 
 ---
@@ -97,13 +103,19 @@ Seven examples are built in (**Alt + 1** to **Alt + 7**): each bug comes with it
 | Ctrl + Enter | Run and hear the code |
 | Ctrl + . | Stop |
 | Ctrl + E | Explore mode on / off |
+| Alt + L | Say which line you're on |
+| Alt + J | Jump to the line with the problem |
 | Ctrl + R | Repeat the last message |
 | Alt + O | Read the program's output aloud |
+| Alt + A | Turn line reading on / off |
+| Alt + S | Turn EchoCode's own voice on / off |
 | Alt + 1 … 7 | Load an example |
 | Alt + V | Hide / show the visuals |
 | F1 | Spoken help |
 
-(On a Mac, Cmd works in place of Ctrl.) Everything spoken is also sent to an ARIA live region, so it works alongside screen readers such as NVDA, JAWS and VoiceOver. Voice speed is adjustable.
+(On a Mac, Cmd works in place of Ctrl.) Voice speed is adjustable, and your settings are remembered.
+
+**Already use a screen reader?** EchoCode works alongside NVDA, JAWS and VoiceOver: every message is also sent to an ARIA live region, so your screen reader reads it. Press **Alt + S** to turn EchoCode's own voice off and **Alt + A** to stop it reading lines, so nothing is read twice.
 
 ---
 
@@ -128,8 +140,8 @@ Seven examples are built in (**Alt + 1** to **Alt + 7**): each bug comes with it
 
 1. **`parse_tree`** uses Python's own `ast` module to turn code into a tree of blocks (if/elif/else are kept side by side, as they look).
 2. **`trace_run`** runs the code with `sys.settrace`, recording each call, return, loop round and print, with the call depth and argument values.
-   - A **step budget** stops infinite loops (it can't be swallowed by `except Exception`).
-   - A **recursion limit** catches runaway recursion.
+   - A **step budget** (300,000 steps) stops infinite loops, and it can't be swallowed by `except Exception`. Long loops that *do* finish (like 10,000 rounds) still finish and are counted correctly.
+   - The **same recursion limit as normal Python** (1,000) catches runaway recursion, so code behaves the way it would anywhere else.
    - The worker runs on its own thread with a **hard timeout**, so the page never freezes.
 3. **`analyze.js`** reads the trace and explains it: which line, which values, which variable never changed, whether a stop condition exists.
 4. **`sonify.js`** turns the trace into a score: call depth → pitch on a pentatonic scale (so it always sounds musical), loop rounds → ticks; long runs speed up so runaway code sounds like it's spiralling away.

@@ -51,6 +51,14 @@ async function runExample(n) {
   return caption();
 }
 
+async function runCurrent() {
+  const before = await page.evaluate(() => window.echocode.lastFinishedAt || 0);
+  await page.click(".cm-content");
+  await page.keyboard.press("Control+Enter");
+  await page.waitForFunction((b) => (window.echocode.lastFinishedAt || 0) > b, before, { timeout: 45000 });
+  return caption();
+}
+
 async function press(key) {
   await page.keyboard.press(key);
   await page.waitForTimeout(80);
@@ -78,24 +86,28 @@ await check("Runaway recursion: climbs, buzzes, explains the missing if", async 
 
 await check("Fixed recursion: up then back down, chime", async () => {
   const text = await runExample(2);
-  expect(text === "Done. countdown was called 4 times, and every call came back.", text);
+  expect(text === "Done. countdown was called 4 times, and every call came back. Press Alt O to hear what it printed.", text);
   const levels = await page.evaluate(() => window.echocode.lastScore.steps.map((s) => s.level).join());
   expect(levels === "1,2,3,4,3,2,1,0", `staircase was ${levels}`);
 });
 
-await check("Runaway loop: names the variable that never changes", async () => {
+await check("Runaway loop: names the variable that never changes (and gives up fast)", async () => {
+  const started = Date.now();
   const text = await runExample(3);
+  const seconds = (Date.now() - started) / 1000;
+  console.log(`      (took ${seconds.toFixed(1)}s including the sounds)`);
+  expect(seconds < 20, `took ${seconds}s`);
   expect(text.includes("count was 1 every single time. Is count ever changing?"), text);
 });
 
 await check("Fixed loop: three ticks, chime", async () => {
-  expect((await runExample(4)) === "Done. The loop on line 2 ran 3 times.", await caption());
+  expect((await runExample(4)) === "Done. The loop on line 2 ran 3 times. Press Alt O to hear what it printed.", await caption());
   const sounds = await page.evaluate(() => window.echocode.lastScore.steps.map((s) => s.sound).join());
   expect(sounds === "tick,tick,tick", sounds);
 });
 
 await check("Typo: did-you-mean suggestion", async () => {
-  expect((await runExample(7)) === "Name error on line 3: totl is not defined. Did you mean total?", await caption());
+  expect((await runExample(7)) === "Name error on line 3: totl is not defined. Did you mean total? Press Alt J to jump there.", await caption());
 });
 
 await check("Alt+O reads the output aloud", async () => {
@@ -135,6 +147,47 @@ await check("Syntax errors are announced and Explore refuses politely", async ()
   await page.keyboard.press("Control+e");
   await page.waitForFunction(() => /Syntax error/.test(document.getElementById("caption").textContent), null, { timeout: 15000 });
   expect((await caption()).startsWith("Can't explore yet. Syntax error on line 1"), await caption());
+});
+
+await check("Arrow keys in the editor read the line out, with its indent", async () => {
+  await page.keyboard.press("Alt+2");
+  await page.click(".cm-content");
+  await page.keyboard.press("Control+Home");
+  expect((await press("ArrowDown")) === "Line 2, indent 1: if n == 0:.", await caption());
+  expect((await press("ArrowDown")) === "Line 3, indent 2: return.", await caption());
+  expect((await press("Alt+l")) === "Line 3, indent 2: return.", await caption());
+});
+
+await check("Alt+J jumps to the line with the problem", async () => {
+  await runExample(7);
+  expect((await press("Alt+j")) === "Line 3, indent 1: total = totl + price.", await caption());
+  expect(await page.evaluate(() => window.echocode.getCurrentLine()) === 3, "cursor should be on line 3");
+});
+
+await check("A misspelled keyword suggests the keyword (retur -> return)", async () => {
+  await page.evaluate(() => window.echocode.setCode("def f(n):\n    if n == 0:\n        retur\n    f(n - 1)\nf(3)\n"));
+  const text = await runCurrent();
+  expect(text.startsWith("Name error on line 3: retur is not defined. Did you mean return?"), text);
+});
+
+await check("A long loop that DOES finish is not called infinite", async () => {
+  await page.evaluate(() => window.echocode.setCode("total = 0\nfor i in range(10000):\n    total += i\nprint(total)\n"));
+  const text = await runCurrent();
+  expect(text.startsWith("Done. The loop on line 2 ran 10,000 times."), text);
+  expect((await page.textContent("#output")).trim() === "49995000", "wrong output");
+});
+
+await check("Alt+S turns the built-in voice off and on (for screen reader users)", async () => {
+  expect((await press("Alt+s")).startsWith("Built-in voice off."), await caption());
+  expect((await press("Alt+s")) === "Built-in voice on.", await caption());
+});
+
+await check("Your code is still there after refreshing the page", async () => {
+  await page.evaluate(() => window.echocode.setCode("print('still here')\n"));
+  await page.reload();
+  await page.waitForFunction(() => /ready/.test(document.getElementById("status-pill").textContent), null, { timeout: 120000 });
+  const code = await page.textContent(".cm-content");
+  expect(code.includes("still here"), `code after refresh: ${code}`);
 });
 
 await check("No errors in the browser console", async () => {

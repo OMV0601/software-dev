@@ -1,12 +1,12 @@
 // EchoCode main file: connects the editor, Python, sound, voice and visuals.
 
-import { setupEditor, getCode, setCode, highlightLine, getCurrentLine } from "./editor.js";
+import { setupEditor, getCode, setCode, highlightLine, getCurrentLine, getLineText, goToEditorLine, getEditorElement } from "./editor.js";
 import { startPython, isPythonReady, runCode } from "./python.js";
 import { EXAMPLES, getExample } from "./examples.js";
 import { startAudio, playScore, stopSound, isPlaying } from "./audio.js";
 import { buildScore } from "./sonify.js";
 import { analyze } from "./analyze.js";
-import { setupSpeech, say, repeatLast, stopTalking, setVoiceSpeed } from "./speech.js";
+import { setupSpeech, say, repeatLast, stopTalking, setVoiceSpeed, setVoiceOn, isVoiceOn } from "./speech.js";
 import { setupExplorer, toggleExplore, isExploring, setExploring } from "./explore.js";
 import { setupVisuals, addSoundDot, resetPitchGraph, addPitchStep, finishPitchGraph } from "./overlay.js";
 
@@ -19,6 +19,30 @@ const speedSlider = document.getElementById("rate");
 
 let running = false;
 let runNumber = 0; // goes up every run, so an old run knows it got replaced
+let lastProblemLine = null; // so Alt+J can jump to the line with the problem
+
+// ---------- saving settings + code ----------
+// localStorage keeps things after you close the page. It can fail (like in
+// private browsing), so every use is wrapped in try/catch.
+function loadSaved(name, fallback) {
+  try {
+    const value = localStorage.getItem("echocode-" + name);
+    if (value === null) return fallback;
+    return JSON.parse(value);
+  } catch (err) {
+    return fallback;
+  }
+}
+
+function save(name, value) {
+  try {
+    localStorage.setItem("echocode-" + name, JSON.stringify(value));
+  } catch (err) {
+    // not a big deal, it just won't be remembered
+  }
+}
+
+let readLinesAloud = loadSaved("readLines", true);
 
 // the automated test (tests/e2e.mjs) reads these to check things worked
 window.echocode = {
@@ -53,7 +77,11 @@ function showCaption(text, tone) {
 // ---------- setup ----------
 setupSpeech(document.getElementById("live"), showCaption);
 setupVisuals(document.getElementById("space"), document.getElementById("pitch"));
-setupEditor(document.getElementById("editor"), EXAMPLES[0].code);
+// start with the code from last time, so refreshing the page doesn't lose your work
+setupEditor(document.getElementById("editor"), loadSaved("code", EXAMPLES[0].code), function (code) {
+  save("code", code);
+});
+setVoiceOn(loadSaved("voiceOn", true));
 
 startPython(function (state) {
   if (state === "ready") {
@@ -147,7 +175,12 @@ async function run() {
   finishPitchGraph(analysis.tone, endingLabel(analysis, score));
   addSoundDot({ x: 0, y: 0.3, z: -1 }, ok ? "done" : "error", ok ? "✓ chime" : "✕ buzz");
   highlightLine(analysis.line, ok ? "ok" : "error");
-  say(analysis.text, analysis.tone);
+  lastProblemLine = analysis.line;
+  // tell them what they can do next
+  let message = analysis.text;
+  if (!ok && analysis.line) message += " Press Alt J to jump there.";
+  if (ok && result.output) message += " Press Alt O to hear what it printed.";
+  say(message, analysis.tone);
   running = false;
   window.echocode.lastFinishedAt = Date.now();
 }
@@ -188,6 +221,72 @@ function readOutput() {
   say(text);
 }
 
+// "Line 3, indent 2: return" - indent matters a lot in Python
+function describeLine(lineNumber) {
+  const text = getLineText(lineNumber);
+  let spaces = 0;
+  for (const ch of text) {
+    if (ch === " ") spaces += 1;
+    else if (ch === "\t") spaces += 4;
+    else break;
+  }
+  const indent = Math.floor(spaces / 4);
+  let result = "Line " + lineNumber;
+  if (text.trim() === "") result += ", blank";
+  if (indent > 0) result += ", indent " + indent;
+  if (text.trim() === "") return result + ".";
+  return result + ": `" + text.trim() + "`.";
+}
+
+// Alt+L: "where am I?"
+function readCurrentLine() {
+  say(describeLine(getCurrentLine()));
+}
+
+// Alt+J: jump to the line that had the problem in the last run
+function jumpToProblem() {
+  if (!lastProblemLine) {
+    say("No problem to jump to. Run your code first with Control Enter.");
+    return;
+  }
+  goToEditorLine(lastProblemLine);
+  say(describeLine(lastProblemLine));
+}
+
+// read the line out loud when you move up/down in the editor.
+// People with their own screen reader can turn this off (Alt+A), because their
+// screen reader already does it.
+getEditorElement().addEventListener("keydown", function (e) {
+  if (!readLinesAloud || e.altKey) return;
+  // if the autocomplete popup is open, the arrows pick a suggestion instead of moving lines
+  if (document.querySelector(".cm-tooltip-autocomplete")) return;
+  const moveKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Enter"];
+  const ctrlMove = (e.ctrlKey || e.metaKey) && (e.key === "Home" || e.key === "End");
+  if (moveKeys.includes(e.key) || ctrlMove) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") return; // that's Run, not a new line
+    // wait until the editor has actually moved the cursor, then read
+    setTimeout(readCurrentLine, 0);
+  }
+});
+
+function toggleLineReading() {
+  readLinesAloud = !readLinesAloud;
+  save("readLines", readLinesAloud);
+  say(readLinesAloud ? "Reading lines aloud is on." : "Reading lines aloud is off.");
+}
+
+function toggleVoice() {
+  const on = !isVoiceOn();
+  save("voiceOn", on);
+  if (on) {
+    setVoiceOn(true);
+    say("Built-in voice on.");
+  } else {
+    say("Built-in voice off. Your screen reader will still read every message.");
+    setVoiceOn(false);
+  }
+}
+
 async function startExplore() {
   if (!isPythonReady()) {
     say("Python is still loading. Try again in a moment.");
@@ -202,7 +301,10 @@ const HELP_TEXT =
   "Notes going up mean a function calling deeper; going down means returning. " +
   "Ticks are loop rounds. A chime means it finished; a buzz means a problem. " +
   "Control period stops. Control E explores your code by sound. " +
-  "Control R repeats the last message. Alt O reads the output. Alt 1 to 7 loads an example. Alt V hides the visuals.";
+  "Alt L says which line you're on. Alt J jumps to the problem. Alt O reads the output. " +
+  "Control R repeats the last message. Alt 1 to 7 loads an example. " +
+  "Alt A turns line reading on or off, and Alt S turns this voice off if you use your own screen reader. " +
+  "Tab indents. To leave the editor, press Escape, then Tab. Alt V hides the visuals.";
 
 // ---------- keyboard shortcuts ----------
 // The "true" at the end means we see the key BEFORE the editor does,
@@ -218,6 +320,10 @@ document.addEventListener("keydown", function (e) {
   else if (ctrl && key === "e") startExplore();
   else if (e.key === "F1") say(HELP_TEXT);
   else if (e.altKey && e.code === "KeyO") readOutput();
+  else if (e.altKey && e.code === "KeyL") readCurrentLine();
+  else if (e.altKey && e.code === "KeyJ") jumpToProblem();
+  else if (e.altKey && e.code === "KeyA") toggleLineReading();
+  else if (e.altKey && e.code === "KeyS") toggleVoice();
   else if (e.altKey && e.code === "KeyV") document.body.classList.toggle("visuals-off");
   else if (e.altKey && e.code.startsWith("Digit")) {
     // Alt+1 to Alt+7 load the examples. e.code is "Digit1", "Digit2"...
@@ -240,5 +346,17 @@ exampleSelect.addEventListener("change", function () { loadExample(exampleSelect
 document.getElementById("run-btn").addEventListener("click", run);
 document.getElementById("stop-btn").addEventListener("click", function () { stop(false); });
 document.getElementById("explore-btn").addEventListener("click", startExplore);
-speedSlider.addEventListener("input", function () { setVoiceSpeed(Number(speedSlider.value)); });
+speedSlider.value = loadSaved("speed", 1.3);
+speedSlider.addEventListener("input", function () {
+  setVoiceSpeed(Number(speedSlider.value));
+  save("speed", Number(speedSlider.value));
+});
 setVoiceSpeed(Number(speedSlider.value));
+
+// say hello the first time someone clicks or tabs into the editor
+let welcomed = false;
+getEditorElement().addEventListener("focus", function () {
+  if (welcomed) return;
+  welcomed = true;
+  say("EchoCode. Press F1 for help, or Control Enter to run your code.");
+});

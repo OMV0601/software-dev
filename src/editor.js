@@ -2,7 +2,8 @@
 // and with screen readers out of the box.
 
 import { basicSetup } from "codemirror";
-import { EditorView, Decoration } from "@codemirror/view";
+import { EditorView, Decoration, keymap } from "@codemirror/view";
+import { indentWithTab } from "@codemirror/commands";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { python } from "@codemirror/lang-python";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
@@ -61,21 +62,33 @@ const look = EditorView.theme({
   ".cm-running-ok": { background: "var(--ok-line)", boxShadow: "inset 4px 0 0 var(--ok)" },
 }, { dark: true });
 
-export function setupEditor(parent, startingCode) {
+export function setupEditor(parent, startingCode, onChange) {
   view = new EditorView({
     parent: parent,
     state: EditorState.create({
       doc: startingCode,
       extensions: [
+        // Tab indents (Python needs indenting!). To LEAVE the editor with the
+        // keyboard, press Escape and then Tab. CodeMirror has that built in.
+        keymap.of([indentWithTab]),
         basicSetup,
         python(),
         syntaxHighlighting(colors),
         look,
         highlightField,
-        EditorView.contentAttributes.of({ "aria-label": "Python code editor" }),
+        EditorView.contentAttributes.of({ "aria-label": "Python code editor. Press F1 for help." }),
+        // tell main.js whenever the code changes (so it can auto-save)
+        EditorView.updateListener.of(function (update) {
+          if (update.docChanged && onChange) onChange(getCode());
+        }),
       ],
     }),
   });
+}
+
+// the actual element you type into (main.js listens to its arrow keys)
+export function getEditorElement() {
+  return view.contentDOM;
 }
 
 export function getCode() {

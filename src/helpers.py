@@ -13,11 +13,13 @@ import ast
 import builtins
 import difflib
 import io
+import keyword
 import sys
 from contextlib import redirect_stdout
 
 STUDENT_FILE = "<student>"  # fake file name so we can tell the student's code apart
-MAX_EVENTS = 4000           # if the code takes more steps than this, we stop it
+MAX_STEPS = 300000          # if the code takes more steps than this, we say it's stuck
+MAX_EVENTS = 4000           # we only SAVE the first 4000 steps (that's plenty for the sounds)
 MAX_LABEL_LENGTH = 70
 MAX_VALUE_LENGTH = 40
 MAX_SNAPSHOTS = 400
@@ -51,7 +53,8 @@ def code_text(node):
 
 def syntax_error_info(err):
     return {
-        "type": "SyntaxError",
+        # IndentationError and TabError are kinds of SyntaxError, keep the real name
+        "type": type(err).__name__,
         "message": err.msg or "invalid syntax",
         "line": err.lineno or 1,
         "col": err.offset or 0,
@@ -285,18 +288,30 @@ events = []
 depth = 0
 max_depth = 0
 steps = 0
-max_events = MAX_EVENTS
+max_steps = MAX_STEPS
 loop_body_starts = {}
 loop_condition_vars = {}
 loop_snapshots = {}
+# we count these for the WHOLE run, even after we stop saving events,
+# so a loop that runs 10,000 times still gets counted right
+loop_counts = {}
+call_counts = {}
+return_counts = {}
+
+
+def add_one(counts, key):
+    if key not in counts:
+        counts[key] = 0
+    counts[key] += 1
 
 
 def record(event):
     global steps
     steps += 1
-    if len(events) >= max_events:
+    if steps > max_steps:
         raise TooManySteps()
-    events.append(event)
+    if len(events) < MAX_EVENTS:
+        events.append(event)
 
 
 def lookup_value(frame, name):
@@ -323,6 +338,7 @@ def watch_step(frame, event, arg):
         depth += 1
         if depth > max_depth:
             max_depth = depth
+        add_one(call_counts, name)
         # write down the argument values, like "n=3"
         arg_texts = []
         argument_names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
@@ -338,6 +354,7 @@ def watch_step(frame, event, arg):
         if line in loop_body_starts:
             loop_line = loop_body_starts[line]
             step["loop"] = loop_line
+            add_one(loop_counts, loop_line)
             # for while loops, save the condition variables every round,
             # so later we can say "count was 1 every single time"
             if loop_line in loop_condition_vars:
@@ -355,6 +372,7 @@ def watch_step(frame, event, arg):
             return watch_step
         record({"e": "return", "line": frame.f_lineno, "depth": depth,
                 "fn": name, "value": value_to_text(arg)})
+        add_one(return_counts, name)
         depth -= 1
 
     return watch_step
@@ -389,6 +407,8 @@ def closest_name(wrong_name, tree):
     for builtin_name in dir(builtins):
         if not builtin_name.startswith("_"):
             known_names.append(builtin_name)
+    # Python keywords too, so "retur" -> "return" and "whlie" -> "while"
+    known_names.extend(keyword.kwlist)
     known_names = sorted(set(known_names))
     if wrong_name in known_names:
         known_names.remove(wrong_name)
@@ -404,9 +424,10 @@ def no_input(*args, **kwargs):
                        "Put the value straight into a variable instead.")
 
 
-def trace_run(code, limit=MAX_EVENTS):
-    global events, depth, max_depth, steps, max_events
+def trace_run(code, limit=MAX_STEPS):
+    global events, depth, max_depth, steps, max_steps
     global loop_body_starts, loop_condition_vars, loop_snapshots
+    global loop_counts, call_counts, return_counts
 
     # 1. check the code is valid Python first
     try:
@@ -415,7 +436,8 @@ def trace_run(code, limit=MAX_EVENTS):
     except SyntaxError as err:
         return {"status": "syntax", "error": syntax_error_info(err), "events": [],
                 "output": "", "loops": [], "functions": {}, "loopSnapshots": {},
-                "maxDepth": 0, "steps": 0}
+                "loopCounts": {}, "callCounts": {}, "returnCounts": {},
+                "maxDepth": 0, "depthAtEnd": 0, "steps": 0, "eventsCut": False}
 
     # 2. reset everything from the last run
     loops, functions, loop_body_starts = find_loops_and_functions(tree)
@@ -427,8 +449,11 @@ def trace_run(code, limit=MAX_EVENTS):
     depth = 0
     max_depth = 0
     steps = 0
-    max_events = limit
+    max_steps = limit
     loop_snapshots = {}
+    loop_counts = {}
+    call_counts = {}
+    return_counts = {}
 
     # 3. run it, catching whatever goes wrong
     printed = io.StringIO()  # print() will write into this instead of the screen
@@ -437,8 +462,8 @@ def trace_run(code, limit=MAX_EVENTS):
     old_input = builtins.input
     old_limit = sys.getrecursionlimit()
     builtins.input = no_input
-    # lower recursion limit so runaway recursion gets caught fast
-    sys.setrecursionlimit(400)
+    # same recursion limit as normal Python, so code acts the same as it would anywhere else
+    sys.setrecursionlimit(1000)
     try:
         with redirect_stdout(printed):
             sys.settrace(watch_step)
@@ -468,6 +493,9 @@ def trace_run(code, limit=MAX_EVENTS):
     snapshots = {}
     for loop_line in loop_snapshots:
         snapshots[str(loop_line)] = loop_snapshots[loop_line]
+    counts = {}
+    for loop_line in loop_counts:
+        counts[str(loop_line)] = loop_counts[loop_line]
 
     return {
         "status": status,
@@ -477,6 +505,11 @@ def trace_run(code, limit=MAX_EVENTS):
         "loops": loops,
         "functions": functions,
         "loopSnapshots": snapshots,
+        "loopCounts": counts,
+        "callCounts": call_counts,
+        "returnCounts": return_counts,
         "maxDepth": max_depth,
+        "depthAtEnd": depth,
         "steps": steps,
+        "eventsCut": steps > len(events),
     }
