@@ -1,6 +1,9 @@
 // EchoCode main file: connects the editor, Python, sound, voice and visuals.
 
-import { setupEditor, getCode, setCode, highlightLine, getCurrentLine, getLineText, goToEditorLine, getEditorElement } from "./editor.js";
+import {
+  setupEditor, getCode, setCode, highlightLine, getCurrentLine, getLineText, goToEditorLine,
+  getEditorElement, getCursorColumn, isEditorFocused, focusEditor,
+} from "./editor.js";
 import { startPython, isPythonReady, runCode } from "./python.js";
 import { EXAMPLES, getExample } from "./examples.js";
 import { startAudio, playScore, stopSound, isPlaying } from "./audio.js";
@@ -44,6 +47,15 @@ function save(name, value) {
 
 let readLinesAloud = loadSaved("readLines", true);
 
+// for the "press Control Enter to run" reminder
+let changedSinceRun = false;
+let runHintGiven = false;
+let hintTimer = null;
+
+// for the welcome message on the first key press
+let welcomed = false;
+let skipNextRead = false;
+
 // the automated test (tests/e2e.mjs) reads these to check things worked
 window.echocode = {
   lastScore: null,
@@ -80,6 +92,10 @@ setupVisuals(document.getElementById("space"), document.getElementById("pitch"))
 // start with the code from last time, so refreshing the page doesn't lose your work
 setupEditor(document.getElementById("editor"), loadSaved("code", EXAMPLES[0].code), function (code) {
   save("code", code);
+  changedSinceRun = true;
+  // when they stop typing for a few seconds, remind them how to run it (once)
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(giveRunHint, 3500);
 });
 setVoiceOn(loadSaved("voiceOn", true));
 
@@ -133,6 +149,7 @@ function endingLabel(analysis, score) {
   }
   if (analysis.kind === "runaway-recursion") return "never came back ↑";
   if (analysis.kind === "runaway-loop") return "never stopped ⟳";
+  if (analysis.kind === "unreachable") return "some lines never run ✕";
   if (analysis.kind === "syntax") return "syntax error ✕";
   if (analysis.kind === "timeout") return "too long ✕";
   return "error ✕";
@@ -148,6 +165,8 @@ async function run() {
   running = true;
   runNumber++;
   const myRun = runNumber;
+  changedSinceRun = false;
+  runHintGiven = false;
   stopTalking();
   showCaption("Running…");
 
@@ -159,6 +178,8 @@ async function run() {
   // 2. work out what happened, and turn the steps into sounds
   const analysis = analyze(result);
   const score = buildScore(result);
+  // the ending sound matches the explanation: a buzz for anything that needs fixing
+  score.ending = analysis.tone === "ok" ? "chime" : "buzz";
   window.echocode.lastScore = score;
   resetPitchGraph(score);
 
@@ -205,7 +226,18 @@ function loadExample(id) {
   outputBox.textContent = "";
   highlightLine(null);
   resetPitchGraph(null);
-  say("Loaded example: " + example.title + ".");
+  runHintGiven = true; // we're about to tell them how to run it anyway
+  // put the cursor somewhere predictable and say exactly where it is
+  goToEditorLine(1);
+  const lineCount = example.code.trimEnd().split("\n").length;
+  say(`Loaded ${example.title}. It has ${lineCount} lines. You're at the end of line 1: \`${getLineText(1).trim()}\`. ` +
+      "Use the up and down arrows to read it, or press Control Enter to run it.");
+}
+
+function giveRunHint() {
+  if (!changedSinceRun || runHintGiven || running || !isEditorFocused()) return;
+  runHintGiven = true;
+  say("When you're ready, press Control Enter to run your code.");
 }
 
 // someone who can't see can't read the output box, so Alt+O reads it out
@@ -238,9 +270,35 @@ function describeLine(lineNumber) {
   return result + ": `" + text.trim() + "`.";
 }
 
+// what to call a single character when the cursor moves past it
+const CHARACTER_NAMES = {
+  " ": "space", "(": "left paren", ")": "right paren", "[": "left bracket", "]": "right bracket",
+  "{": "left brace", "}": "right brace", ":": "colon", ",": "comma", ".": "dot", "=": "equals",
+  "+": "plus", "-": "minus", "*": "star", "/": "slash", "%": "percent", "<": "less than",
+  ">": "greater than", "!": "exclamation", "'": "quote", '"': "double quote", "_": "underscore",
+  "#": "hash", "\t": "tab",
+};
+
+function characterName(ch) {
+  if (CHARACTER_NAMES[ch]) return CHARACTER_NAMES[ch];
+  if (ch >= "A" && ch <= "Z") return "capital " + ch;
+  return ch;
+}
+
+// where the cursor is inside the line: start, end, or just before some word
+function whereInLine() {
+  const text = getLineText(getCurrentLine());
+  const col = getCursorColumn();
+  const indentLength = text.length - text.trimStart().length;
+  if (text.trim() === "" || col >= text.length) return "at the end of the line";
+  if (col <= indentLength) return "at the start of the line";
+  const nextWord = text.slice(col).trim().split(" ")[0];
+  return "in the middle, just before `" + nextWord + "`";
+}
+
 // Alt+L: "where am I?"
 function readCurrentLine() {
-  say(describeLine(getCurrentLine()));
+  say(describeLine(getCurrentLine()) + " You're " + whereInLine() + ".");
 }
 
 // Alt+J: jump to the line that had the problem in the last run
@@ -260,12 +318,31 @@ getEditorElement().addEventListener("keydown", function (e) {
   if (!readLinesAloud || e.altKey) return;
   // if the autocomplete popup is open, the arrows pick a suggestion instead of moving lines
   if (document.querySelector(".cm-tooltip-autocomplete")) return;
-  const moveKeys = ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Enter"];
-  const ctrlMove = (e.ctrlKey || e.metaKey) && (e.key === "Home" || e.key === "End");
-  if (moveKeys.includes(e.key) || ctrlMove) {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") return; // that's Run, not a new line
-    // wait until the editor has actually moved the cursor, then read
-    setTimeout(readCurrentLine, 0);
+  if (skipNextRead) {
+    skipNextRead = false; // the welcome message is playing, don't talk over it
+    return;
+  }
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && e.key === "Enter") return; // that's Run, not a new line
+
+  // everything below waits (setTimeout 0) until the editor has actually moved the cursor
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Enter"].includes(e.key) ||
+      (ctrl && (e.key === "Home" || e.key === "End"))) {
+    setTimeout(function () { say(describeLine(getCurrentLine())); }, 0);
+  } else if (e.key === "Home" || e.key === "End") {
+    setTimeout(function () {
+      const line = getCurrentLine();
+      if (e.key === "End") say("End of line " + line + ".");
+      else say("Start of line " + line + ", " + whereInLine().replace("at the start of the line", "before the code") + ".");
+    }, 0);
+  } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    // say the character the cursor is now next to (like a screen reader does)
+    setTimeout(function () {
+      const text = getLineText(getCurrentLine());
+      const col = getCursorColumn();
+      if (col >= text.length) say("End of line.");
+      else say(characterName(text[col]));
+    }, 0);
   }
 });
 
@@ -301,6 +378,7 @@ const HELP_TEXT =
   "Notes going up mean a function calling deeper; going down means returning. " +
   "Ticks are loop rounds. A chime means it finished; a buzz means a problem. " +
   "Control period stops. Control E explores your code by sound. " +
+  "In the editor, up and down read each line, left and right read each character, and Home and End tell you where you are. " +
   "Alt L says which line you're on. Alt J jumps to the problem. Alt O reads the output. " +
   "Control R repeats the last message. Alt 1 to 7 loads an example. " +
   "Alt A turns line reading on or off, and Alt S turns this voice off if you use your own screen reader. " +
@@ -353,10 +431,20 @@ speedSlider.addEventListener("input", function () {
 });
 setVoiceSpeed(Number(speedSlider.value));
 
-// say hello the first time someone clicks or tabs into the editor
-let welcomed = false;
-getEditorElement().addEventListener("focus", function () {
+// The editor is ready to type in as soon as the page opens, so a blind
+// user doesn't have to find it first.
+focusEditor();
+
+// Say hello on the very first key press. (Browsers don't allow talking
+// before the user presses something.) If that first key was one of our
+// shortcuts, they already know what they're doing, so we skip it.
+document.addEventListener("keydown", function (e) {
   if (welcomed) return;
   welcomed = true;
-  say("EchoCode. Press F1 for help, or Control Enter to run your code.");
-});
+  if (e.ctrlKey || e.metaKey || e.altKey || e.key === "F1") return;
+  const moveKeys = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown", "Enter"];
+  if (isEditorFocused() && moveKeys.includes(e.key)) skipNextRead = true;
+  say("Welcome to EchoCode. You're in the code editor, on line " + getCurrentLine() + ". " +
+      "Use the up and down arrows to move between lines, and type to write code. " +
+      "When you're done, press Control Enter to run it. Press F1 any time for help.");
+}, true); // "true" so it runs before the editor handles the key

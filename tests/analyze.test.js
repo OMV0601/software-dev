@@ -111,6 +111,16 @@ while x != 10:
     expect(a.text).toMatch(/^Indentation error on line 2:/);
   });
 
+  it("lines indented under a return are called out (the mistake from filming)", () => {
+    const a = analyze(pyTrace("def countdown(n):\n    if n == 0:\n        return\n        print(n)\n" +
+      "        countdown(n - 1)\n\ncountdown(3)\n"));
+    expect(a.kind).toBe("unreachable");
+    expect(a.tone).toBe("err");
+    expect(a.line).toBe(4);
+    expect(a.text).toBe("Your code finished, but lines 4 to 5 never run, because they come after the " +
+      "`return` on line 3. Should they be indented less?");
+  });
+
   it("timeout", () => {
     expect(analyze({ status: "timeout", events: [] }).kind).toBe("timeout");
   });

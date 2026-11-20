@@ -174,6 +174,18 @@ function explainError(result) {
   return { kind: "error", tone: "err", line: err.line, text: text };
 }
 
+// ---------- it ran, but some lines can never run ----------
+// e.g. print(n) indented under a return by accident. Python doesn't complain,
+// so a blind student would never know without being told.
+function explainUnreachable(result) {
+  const u = result.unreachable[0];
+  let lines = `line ${u.fromLine} never runs`;
+  if (u.toLine > u.fromLine) lines = `lines ${u.fromLine} to ${u.toLine} never run`;
+  const text = `Your code finished, but ${lines}, because ${u.toLine > u.fromLine ? "they come" : "it comes"} ` +
+    `after the \`${u.word}\` on line ${u.stopLine}. Should ${u.toLine > u.fromLine ? "they" : "it"} be indented less?`;
+  return { kind: "unreachable", tone: "err", line: u.fromLine, text: text };
+}
+
 // ---------- it worked ----------
 
 function explainSuccess(result) {
@@ -233,5 +245,6 @@ export function analyze(result) {
     return { kind: "budget", tone: "err", line: null, text: `Your code took more than ${withCommas(result.steps)} steps, so it was stopped.` };
   }
   if (result.status === "error") return explainError(result);
+  if (result.unreachable && result.unreachable.length > 0) return explainUnreachable(result);
   return explainSuccess(result);
 }

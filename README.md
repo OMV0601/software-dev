@@ -45,8 +45,12 @@ Press **Ctrl + E** for Explore mode. Move through **blocks**, not characters.
 Each block type has its own sound: function = chord, loop = drum, if/elif/else = two-note "question", other statements = bell, hitting an edge = thud.
 
 ### 3. 📍 Always know where you are
+- The editor is ready to type in as soon as the page opens, and the first key press gives a short spoken welcome explaining how to start.
 - Moving up or down in the editor reads the line out, **including its indent level** (which matters a lot in Python): *"Line 3, indent 2: return"*.
-- **Alt + L** says which line you're on. **Alt + J** jumps straight to the line with the problem.
+- Left and right read each character you pass; Home and End say *"Start of line 3"* / *"End of line 3"*.
+- Loading an example, or leaving Explore mode, says exactly where the cursor is: *"You're at the end of line 1. Press Enter to add a new line below it."*
+- When you stop typing for a few seconds, it reminds you: *"Press Control Enter to run your code."*
+- **Alt + L** says which line you're on and where in the line. **Alt + J** jumps straight to the line with the problem.
 - **Tab** indents. To leave the editor with the keyboard, press **Escape, then Tab**.
 - Your code is **saved automatically**, so refreshing the page doesn't lose your work.
 
@@ -57,6 +61,7 @@ After each run, EchoCode says what happened, for example:
 - *"The while loop on line 2 ran 1,000 times and never stopped. `count` was 1 every single time. Is `count` ever changing?"*
 - *"Name error on line 3: `totl` is not defined. Did you mean `total`?"* (it also catches misspelled keywords: `retur` → *"Did you mean `return`?"*)
 - *"Done. `countdown` was called 4 times, and every call came back."*
+- *"Your code finished, but lines 4 to 5 never run, because they come after the `return` on line 3. Should they be indented less?"* (catches the most common indentation mistake, which Python itself never warns about)
 
 Code in messages is read the way a teacher would say it: `count = count + 1` → "count becomes count plus 1".
 

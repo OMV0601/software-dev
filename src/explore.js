@@ -73,7 +73,7 @@ export function leaveExplore() {
   highlightLine(null);
   if (line) {
     goToEditorLine(line);
-    say(`Editing, line ${line}.`);
+    say(`Editing. You're at the end of line ${line}. Press Enter to add a new line below it.`);
   } else {
     focusEditor();
     say("Editing.");

@@ -272,6 +272,41 @@ def find_loops_and_functions(tree):
     return loops, functions, loop_body_starts
 
 
+def find_unreachable(tree):
+    # Lines that come straight after a return/break/continue/raise in the same
+    # block can never run. Beginners do this by accident a lot, usually by
+    # indenting lines too far. Example:
+    #     if n == 0:
+    #         return
+    #         print(n)      <- never runs
+    found = []
+    for node in ast.walk(tree):
+        for field in ("body", "orelse", "finalbody"):
+            block = getattr(node, field, None)
+            if not isinstance(block, list):
+                continue
+            for i in range(len(block) - 1):
+                stmt = block[i]
+                if isinstance(stmt, (ast.Return, ast.Break, ast.Continue, ast.Raise)):
+                    if isinstance(stmt, ast.Return):
+                        word = "return"
+                    elif isinstance(stmt, ast.Break):
+                        word = "break"
+                    elif isinstance(stmt, ast.Continue):
+                        word = "continue"
+                    else:
+                        word = "raise"
+                    found.append({
+                        "stopLine": stmt.lineno,
+                        "word": word,
+                        "fromLine": block[i + 1].lineno,
+                        "toLine": block[-1].end_lineno or block[-1].lineno,
+                    })
+                    break  # only report the first one in each block
+    found.sort(key=lambda item: item["fromLine"])
+    return found
+
+
 # ---------------- PART 3: trace_run ----------------
 # sys.settrace() lets us give Python a function that gets called on EVERY step:
 # every line, every function call and every return. We write each one down.
@@ -436,7 +471,7 @@ def trace_run(code, limit=MAX_STEPS):
     except SyntaxError as err:
         return {"status": "syntax", "error": syntax_error_info(err), "events": [],
                 "output": "", "loops": [], "functions": {}, "loopSnapshots": {},
-                "loopCounts": {}, "callCounts": {}, "returnCounts": {},
+                "loopCounts": {}, "callCounts": {}, "returnCounts": {}, "unreachable": [],
                 "maxDepth": 0, "depthAtEnd": 0, "steps": 0, "eventsCut": False}
 
     # 2. reset everything from the last run
@@ -506,6 +541,7 @@ def trace_run(code, limit=MAX_STEPS):
         "functions": functions,
         "loopSnapshots": snapshots,
         "loopCounts": counts,
+        "unreachable": find_unreachable(tree),
         "callCounts": call_counts,
         "returnCounts": return_counts,
         "maxDepth": max_depth,

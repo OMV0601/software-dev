@@ -122,6 +122,18 @@ class JudgeQuestionTests(unittest.TestCase):
         self.assertEqual(r["error"]["type"], "IndentationError")
 
 
+    def test_lines_after_return_are_flagged_as_never_running(self):
+        # the exact mistake from filming: print and the call indented under return
+        code = ("def countdown(n):\n    if n == 0:\n        return\n        print(n)\n"
+                "        countdown(n - 1)\n\ncountdown(3)\n")
+        r = helpers.trace_run(code)
+        self.assertEqual(r["status"], "ok")
+        self.assertEqual(r["unreachable"], [{"stopLine": 3, "word": "return", "fromLine": 4, "toLine": 5}])
+
+    def test_normal_code_has_nothing_unreachable(self):
+        self.assertEqual(helpers.trace_run(COUNTDOWN_FIXED)["unreachable"], [])
+
+
 class ParseTreeTests(unittest.TestCase):
     def test_nesting_and_depth(self):
         t = helpers.parse_tree(COUNTDOWN_FIXED)["tree"]

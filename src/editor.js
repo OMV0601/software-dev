@@ -115,6 +115,16 @@ export function getCurrentLine() {
   return view.state.doc.lineAt(view.state.selection.main.head).number;
 }
 
+// how far along the line the cursor is (0 = the very start)
+export function getCursorColumn() {
+  const head = view.state.selection.main.head;
+  return head - view.state.doc.lineAt(head).from;
+}
+
+export function isEditorFocused() {
+  return view.hasFocus;
+}
+
 export function getLineText(line) {
   if (line < 1 || line > view.state.doc.lines) return "";
   return view.state.doc.line(line).text;
